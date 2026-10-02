@@ -331,3 +331,15 @@ def rel_or_abs(path: Path, root: Path) -> str:
         return str(path.relative_to(root))
     except ValueError:
         return str(path)
+
+
+def windows_extended_path(path: Path) -> Path:
+    """Address the same Windows file beyond MAX_PATH; leave other hosts alone."""
+    if os.name != "nt":
+        return path
+    address = os.path.abspath(path)
+    if address.startswith("\\\\?\\"):
+        return Path(address)
+    if address.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + address[2:])
+    return Path("\\\\?\\" + address)
