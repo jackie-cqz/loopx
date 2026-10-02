@@ -436,7 +436,7 @@ def test_long_lock_paths_release_and_keep_one_identity(tmp_path):
 def test_long_lock_paths_exclude_other_process_and_release_while_holder_alive(tmp_path):
     from loopx.control_plane.runtime.file_paths import windows_extended_path
 
-    target = tmp_path / ("nested-" * 16) / ("a" * 64 + ".json")
+    target = tmp_path / ("nested-" * 24) / ("a" * 64 + ".json")
     assert len(str(target)) > 260
     extended = windows_extended_path(target)
     script = """
