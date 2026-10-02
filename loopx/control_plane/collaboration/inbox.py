@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from ...file_lock import exclusive_file_lock
-from ...paths import windows_extended_path
+from ..runtime.file_paths import windows_extended_path
 from ..content_digest import BARE_SHA256_PATTERN, ENVELOPED_SHA256_PATTERN
 from ..todos.contract import TODO_ID_PATTERN
 

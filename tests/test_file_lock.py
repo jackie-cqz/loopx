@@ -417,7 +417,7 @@ def test_cross_runtime_cleanup_failure_cannot_replace_success(
 
 @pytest.mark.skipif(os.name != "nt", reason="Win32 extended path regression")
 def test_long_lock_paths_release_and_keep_one_identity(tmp_path):
-    from loopx.paths import windows_extended_path
+    from loopx.control_plane.runtime.file_paths import windows_extended_path
 
     target = tmp_path / ("nested-" * 12) / ("a" * 64 + ".json")
     extended = windows_extended_path(target)

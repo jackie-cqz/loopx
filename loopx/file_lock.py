@@ -18,7 +18,7 @@ import importlib
 from typing import Any, Iterator, TextIO
 from uuid import uuid4
 
-from .paths import windows_extended_path
+from .control_plane.runtime.file_paths import windows_extended_path
 
 try:  # pragma: no cover - exercised on POSIX hosts in integration smokes.
     fcntl: Any = importlib.import_module("fcntl")
