@@ -54,9 +54,25 @@ profile 或权限状态，但当前外部 audience 会明确降级为 `restricte
 的 M1 私有 Owner 旅程，目标验收为 A1–A3/A12。它不实现 M2 collaboration request、M3
 outbox，也不把管家 session 字段当成工作、请求或送达权威。
 
-### 实现与后继（2026-09-16）
+### 资格检查点（2026-10-02）
 
-`43d362532` 已有 machine profile、controller 集成与聚焦测试；本次复跑通过不等于本机部署或完整 M1 资格。`restricted` 默认、仅 Codex 支持私人 `trusted_owner` 及外部受众降级保持。DSH 通道选择不继承该强能力 profile。按[统一路线](loopx-overall-roadmap-v0.zh-CN.md) R2 补真实工具/会话/连续执行与设置读回；不得新建第二份机器配置。
+私有 Owner M1 profile 已通过真实 Codex app-server 验收：默认受限、显式配置回读、
+授权的合成文件写入、权限降级、外部受众限制、无效配置回退，以及保留 Session
+历史的重启恢复。trusted profile 现在必须收到匹配的宿主 sandbox 和审批策略回读；
+缺失或不匹配时 fail closed。等价有效 profile 只更新配置元数据，不旋转线程。
+
+Codex 可能在第一轮 Turn 前不持久化线程。私有 dispatch 标记让 LoopX 只重建
+从未尝试提交 Turn 的线程，并保留可见历史。一旦尝试提交，恢复保留精确上游绑定，
+不会重放 Turn。适配器关闭时会结束自己拥有的 Windows app-server 进程树。
+Dashboard 刷新实际 Session 回读，不让过期机器配置覆盖它。
+打包桌面/移动端回读与聚焦负向测试通过。
+
+在源码 checkout 中运行显式真实宿主验收：
+`uv run --extra test python examples/manager-runtime-profile-live-smoke.py --execute-real-host --codex-bin codex`。
+该验收消耗模型额度，只使用一次性合成 Session，不恢复用户 Session。
+打包 UI 验收：`LOOPX_PERSONAL_WORKSPACE_SCENARIO=manager-runtime-readback node examples/personal-workspace-browser-smoke.mjs --packaged`。
+本切片尚未验证真实 Lark 传输、非 Codex 宿主、M2/M3 或远程协作。
+R2 的更广泛持续执行验收仍未关闭，参见[统一路线](loopx-overall-roadmap-v0.zh-CN.md)。
 
 ### 验收
 

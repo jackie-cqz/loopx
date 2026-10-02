@@ -64,9 +64,29 @@ This slice implements only the private-owner M1 journey in
 It does not implement the M2 collaboration request, the M3 outbox, or treat manager Session fields
 as work, request, or delivery authority.
 
-### Implementation and successor (2026-09-16)
+### Qualification checkpoint (2026-10-02)
 
-`43d362532` contains the machine profile, controller integration and focused tests; passing them here is not deployment or full M1 qualification. The `restricted` default, Codex-only private `trusted_owner` and external-audience downgrade remain. Selecting DSH does not inherit that capable profile. Follow [roadmap](loopx-overall-roadmap-v0.md) R2 for actual tool/session/continued-execution and settings readback, without a second machine configuration.
+The private-owner M1 profile is qualified against a real Codex app-server: default
+restriction, explicit configuration readback, an authorized synthetic file write,
+profile downgrade, external-audience restriction, invalid configuration fallback,
+and restart with retained Session history. A trusted profile now requires matching
+host sandbox and approval-policy readback; missing or mismatched policy fails closed.
+Equivalent effective profiles update configuration metadata without rotating a thread.
+
+Codex may not persist a thread until its first Turn. A private dispatch marker lets
+LoopX recreate only a thread with no attempted Turn, preserving visible history.
+Once dispatch is attempted, recovery retains the exact upstream binding and never
+replays the Turn. Owned Windows app-server process trees close with the adapter.
+Dashboard refreshes actual Session readback without replacing it with stale machine
+configuration. Packaged desktop/mobile readback and focused negative tests pass.
+
+Run the opt-in real-host qualification from the source checkout with
+`uv run --extra test python examples/manager-runtime-profile-live-smoke.py --execute-real-host --codex-bin codex`.
+It uses model quota and disposable synthetic Sessions; it does not resume user Sessions.
+Run packaged UI qualification with `LOOPX_PERSONAL_WORKSPACE_SCENARIO=manager-runtime-readback node examples/personal-workspace-browser-smoke.mjs --packaged`.
+Live Lark transport, non-Codex host qualification, M2/M3, and remote collaboration
+remain untested here. R2's broader continued-execution acceptance remains open;
+see the [roadmap](loopx-overall-roadmap-v0.md).
 
 ### Acceptance
 
