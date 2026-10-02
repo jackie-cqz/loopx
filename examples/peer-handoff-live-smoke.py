@@ -17,6 +17,7 @@ import tempfile
 from pathlib import Path
 
 from loopx.chat_agent import CodexChatAgentSession
+from loopx.control_plane.effect_runtime import restart_effect_runtime
 
 
 def tool(name, description, properties=None):
@@ -206,7 +207,30 @@ def main():
     if not args.execute_real_host:
         parser.error("--execute-real-host is required; this smoke uses a real authenticated host")
     with tempfile.TemporaryDirectory(prefix="lxp-") as folder:
-        result = qualify(Path(folder), codex_bin=args.codex_bin, codex_home=args.codex_home.resolve())
+        # CLI reads start a reusable typed runtime whose Windows cwd keeps the
+        # workspace open. Give this smoke its own locator, then stop that owner
+        # before deleting the workspace; never stop a shared user's runtime.
+        runtime_temp = Path(folder) / "tmp"
+        runtime_temp.mkdir()
+        previous_temp = tempfile.tempdir
+        previous_env = {key: os.environ.get(key) for key in ("TMPDIR", "TEMP", "TMP")}
+        try:
+            tempfile.tempdir = str(runtime_temp)
+            os.environ.update({key: str(runtime_temp) for key in previous_env})
+            try:
+                result = qualify(Path(folder), codex_bin=args.codex_bin,
+                                 codex_home=args.codex_home.resolve())
+            finally:
+                restart = restart_effect_runtime()
+                if restart["status"] == "shutdown_pending":
+                    raise RuntimeError("isolated typed runtime shutdown did not complete")
+        finally:
+            tempfile.tempdir = previous_temp
+            for key, value in previous_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
     print(json.dumps(result, sort_keys=True))
 
 
