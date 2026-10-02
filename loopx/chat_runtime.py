@@ -21,7 +21,7 @@ from .chat_manager import (
 from .chat_coordination import PROJECT_COORDINATION_GUIDANCE, PROJECT_CONTEXT_VERSION
 from .control_plane.collaboration import conversation_scope
 from .capabilities.manager_runtime import (
-    load_effective_manager_runtime_profile, manager_runtime_session_fields,
+    load_effective_manager_runtime_profile, manager_runtime_session_fields, manager_runtime_requires_new_thread,
 )
 from .capabilities.manager_context.team_plan import (
     TeamPlanProjector,
@@ -49,6 +49,7 @@ from .kiro_cli_goal_mode import (
     kiro_cli_chat_command,
 )
 from .chat_store import (
+    UpstreamTurnDispatch,
     CHAT_SESSION_MODE_ATTACHED,
     TERMINAL_TURN_STATES,
     ChatSessionStore,
@@ -135,6 +136,7 @@ class CodexAppServerAdapter:
                 idle_timeout_sec=idle_timeout_sec,
                 hard_timeout_sec=hard_timeout_sec,
                 execution_mode=execution_mode,
+                isolate_process_tree=True,
                 runtime_profile=runtime_profile,
                 sandbox=sandbox,
                 resume_thread_id=resume_thread_id,
@@ -646,6 +648,8 @@ class ChatRuntimeController:
                 assert manager_runtime is not None
                 persisted = self.store.update_session(
                     persisted["session_id"],
+                    **({"upstream_turn_dispatch": UpstreamTurnDispatch.NOT_ATTEMPTED.value}
+                       if isinstance(adapter, CodexAppServerAdapter) else {}),
                     manager_context_version=MANAGER_CONTEXT_VERSION,
                     **alloc.manager_executor_session_fields(manager_executor_allocation),
                     **manager_runtime_session_fields(manager_runtime),
@@ -742,14 +746,7 @@ class ChatRuntimeController:
             current = self.adapters.get(session_id)
             manager_profile_changed = bool(
                 manager_runtime is not None
-                and (
-                    session.get("manager_runtime_profile") is not None
-                    or manager_runtime.get("runtime_profile") != "restricted"
-                )
-                and any(
-                    session.get(key) != value
-                    for key, value in manager_runtime_session_fields(manager_runtime).items()
-                )
+                and manager_runtime_requires_new_thread(session, manager_runtime)
             )
             if (
                 current is not None
@@ -764,14 +761,10 @@ class ChatRuntimeController:
         if reusable is not None:
             # Apply context/tool migrations only when opening an upstream session.
             # A healthy in-process adapter may own a Turn; never replace it here.
-            if (
-                manager_runtime is not None
-                and session.get("manager_runtime_profile") is None
-            ):
-                self.store.update_session(
-                    session_id,
-                    **manager_runtime_session_fields(manager_runtime),
-                )
+            if manager_runtime is not None:
+                fields = manager_runtime_session_fields(manager_runtime)
+                if any(session.get(key) != value for key, value in fields.items()):
+                    self.store.update_session(session_id, **fields)
             return reusable
         if accepted_turn_id is not None:
             accepted_turn = self.store.load_turn(session_id, accepted_turn_id)
@@ -835,6 +828,11 @@ class ChatRuntimeController:
                     or model_allocation is not None
                 )
             )
+            recreate_unsubmitted_thread = bool(
+                manager_runtime is not None
+                and session.get("agent_id") == "codex"
+                and session.get("upstream_turn_dispatch") == UpstreamTurnDispatch.NOT_ATTEMPTED.value
+            )
             legacy_codex_goal_thread = (
                 session.get("agent_id") == "codex"
                 and session.get("upstream_mode") not in {"chat", CODEX_GOAL_CHAT_MODE}
@@ -857,12 +855,12 @@ class ChatRuntimeController:
                 objective=objective,
                 resume_thread_id=(
                     None
-                    if legacy_codex_goal_thread or retry_failed_claude_session or legacy_manager_context or legacy_project_context
+                    if legacy_codex_goal_thread or retry_failed_claude_session or legacy_manager_context or legacy_project_context or recreate_unsubmitted_thread
                     else str(session["upstream_thread_id"])
                 ),
                 history=(
                     history
-                    if legacy_codex_goal_thread or retry_failed_claude_session or legacy_manager_context or legacy_project_context
+                    if legacy_codex_goal_thread or retry_failed_claude_session or legacy_manager_context or legacy_project_context or recreate_unsubmitted_thread
                     or session.get("agent_id")
                     in {"anthropic-api", "openai-api", MANAGED_TURN_HOST}
                     else None
@@ -927,6 +925,12 @@ class ChatRuntimeController:
                 session_id,
                 upstream_thread_id=adapter.upstream_thread_id,
                 upstream_mode=self._managed_upstream_mode(session),
+                upstream_turn_dispatch=(
+                    UpstreamTurnDispatch.NOT_ATTEMPTED
+                    if manager_runtime is not None and isinstance(adapter, CodexAppServerAdapter)
+                    and (legacy_manager_context or recreate_unsubmitted_thread)
+                    else None
+                ),
             )
         except Exception:
             with self.lock:
@@ -1509,6 +1513,11 @@ class ChatRuntimeController:
             )
             if team_plan_context is not None:
                 adapter.team_plan_context = team_plan_context
+            dispatch_session = self.store.load_session(session_id) if isinstance(adapter, CodexAppServerAdapter) else None
+            if dispatch_session is not None and dispatch_session.get("upstream_turn_dispatch") is not None:
+                if not self.store.mark_upstream_turn_attempted(session_id, turn_id, adapter.upstream_thread_id):
+                    raise CodexChatAgentError("The upstream thread changed before dispatch.",
+                        error_code="upstream_thread_changed", gate=None)
             if native_command is not None:
                 if not isinstance(adapter, CodexAppServerAdapter):
                     raise CodexChatAgentError("Native Goal continuation requires a Codex adapter.", error_code="native_goal_adapter_mismatch", gate=None)

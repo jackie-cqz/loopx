@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from datetime import datetime, timedelta, timezone
+from enum import Enum
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,11 @@ from .control_plane.chat_turn_acceptance import (
     plan_managed_turn_acceptance,
 )
 from .file_lock import exclusive_file_lock
+
+
+class UpstreamTurnDispatch(str, Enum):
+    NOT_ATTEMPTED = "not_attempted"
+    ATTEMPTED = "attempted"
 
 
 CHAT_STORE_SCHEMA_VERSION = "loopx_chat_store_v1"
@@ -342,6 +348,7 @@ class ChatSessionStore(ChatIngressStore):
                     "last_error_code",
                     "upstream_thread_id",
                     "upstream_mode",
+                    "upstream_turn_dispatch",
                     "codex_home",
                     "manager_context_version",
                     "coordination_context_version",
@@ -359,6 +366,8 @@ class ChatSessionStore(ChatIngressStore):
                     "manager_executor_allocation",
                     "goal_id",
                 }
+                if "upstream_turn_dispatch" in changes:
+                    changes["upstream_turn_dispatch"] = UpstreamTurnDispatch(changes["upstream_turn_dispatch"]).value
                 unknown = set(changes) - allowed
                 if unknown:
                     raise ValueError(f"unsupported chat session fields: {sorted(unknown)}")
@@ -475,6 +484,7 @@ class ChatSessionStore(ChatIngressStore):
         *,
         upstream_thread_id: str | None = None,
         upstream_mode: str | None = None,
+        upstream_turn_dispatch: UpstreamTurnDispatch | None = None,
     ) -> dict[str, Any]:
         """Restore a managed Session only while it has no active Turn."""
 
@@ -502,6 +512,8 @@ class ChatSessionStore(ChatIngressStore):
                         upstream_mode,
                         field="upstream_mode",
                     )
+                if upstream_turn_dispatch is not None:
+                    identity_changes["upstream_turn_dispatch"] = UpstreamTurnDispatch(upstream_turn_dispatch).value
                 if payload.get("active_turn_id"):
                     if identity_changes:
                         payload.update(identity_changes)
@@ -518,6 +530,19 @@ class ChatSessionStore(ChatIngressStore):
                 payload["updated_at"] = utc_now()
                 _atomic_write_json(path, payload, preserve_mode=True)
                 return payload
+
+    def mark_upstream_turn_attempted(self, session_id: str, turn_id: str, upstream_thread_id: str) -> bool:
+        """Fence the private host-dispatch fact to the exact active binding."""
+        path = self._session_path(session_id)
+        with self._session_lock(session_id), exclusive_file_lock(path):
+            payload = self.load_session(session_id)
+            if (payload is None or payload.get("active_turn_id") != turn_id
+                or payload.get("upstream_thread_id") != upstream_thread_id):
+                return False
+            payload["upstream_turn_dispatch"] = UpstreamTurnDispatch.ATTEMPTED.value
+            payload["updated_at"] = utc_now()
+            _atomic_write_json(path, payload, preserve_mode=True)
+            return True
 
     def release_active_turn(
         self,

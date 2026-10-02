@@ -624,6 +624,29 @@ class CodexChatAgentSession:
                 },
                 request_id=2,
             )
+            # Check the host's effective policy, not only the request we sent.
+            # Legacy restricted hosts may omit readback; a broad owner grant
+            # requires an explicit matching sandbox and approval response.
+            reported_sandbox = thread_result.get("sandbox")
+            reported_type = (
+                reported_sandbox.get("type") if isinstance(reported_sandbox, dict) else None
+            )
+            expected_type = {
+                "read-only": "readOnly", "workspace-write": "workspaceWrite",
+                "danger-full-access": "dangerFullAccess",
+            }[selected_sandbox]
+            require_readback = not execution_mode and runtime_profile == "trusted_owner"
+            if ((reported_sandbox is not None or require_readback) and reported_type != expected_type
+                or (thread_result.get("approvalPolicy") is not None or require_readback)
+                and thread_result.get("approvalPolicy") != "never"):
+                raise CodexChatAgentError(
+                    "Codex did not confirm the selected runtime sandbox and approval policy.",
+                    error_code="manager_runtime_profile_unverified",
+                    gate=_host_tool_gate(
+                        "The host runtime policy does not match the selected profile.",
+                        "Update or repair Codex, or restore the restricted Manager runtime profile.",
+                    ),
+                )
             if model and thread_result.get("model") not in {None, model}:
                 raise session._runtime_error(
                     "Codex did not apply the requested manager model."

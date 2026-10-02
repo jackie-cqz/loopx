@@ -1271,6 +1271,7 @@ function PersonalGoalHome({
   }>>([]);
   const [goalSubagentConfigurationEnabled, setGoalSubagentConfigurationEnabled] = useState(false);
   const [managerRuntime, setManagerRuntime] = useState<ManagerRuntimeSessionReadback | null>(null);
+  const managerRuntimeHasSessionReadback = useRef(false);
   const [managerChannelBinding, setManagerChannelBinding] = useState<ManagerChannelBinding | null>(null);
   const [capabilityRevision, setCapabilityRevision] = useState(0);
   const model = useMemo(() => {
@@ -1505,6 +1506,11 @@ function PersonalGoalHome({
       try {
         const snapshot = await fetchChatSession(sessionId);
         if (cancelled) return;
+        if (contextId === "manager" && sessionId === runtimeBindings[contextId]?.sessionId
+          && snapshot.session.manager_runtime) {
+          managerRuntimeHasSessionReadback.current = true;
+          setManagerRuntime(snapshot.session.manager_runtime);
+        }
         setMessagesByContext((current) => {
           const previous = current[contextId] ?? [];
           const updated = reconcileConversationReturns(previous, sessionId, snapshot.messages, (row) => ({
@@ -1565,6 +1571,7 @@ function PersonalGoalHome({
       setRuntimeAgents([]);
       setGoalSubagentConfigurationEnabled(false);
       setManagerRuntime(null);
+      managerRuntimeHasSessionReadback.current = false;
       setManagerChannelBinding(null);
       return;
     }
@@ -1575,7 +1582,7 @@ function PersonalGoalHome({
           setRuntimeAgents(capabilities.adapters ?? []);
           const runtime = capabilities.manager?.runtime;
           setManagerChannelBinding(capabilities.manager?.channel_binding ?? null);
-          setManagerRuntime(runtime ? {
+          if (!managerRuntimeHasSessionReadback.current) setManagerRuntime(runtime ? {
             schema_version: "manager_runtime_session_readback_v0",
             runtime_profile: runtime.runtime_profile,
             configuration_revision: runtime.configuration_revision,
@@ -1681,6 +1688,7 @@ function PersonalGoalHome({
         );
         if (cancelled) return;
         if (contextKind === "manager" && created.session.manager_runtime) {
+          managerRuntimeHasSessionReadback.current = true;
           setManagerRuntime(created.session.manager_runtime);
         }
         recordSessionAdmission(created.session);
@@ -2262,6 +2270,7 @@ function PersonalGoalHome({
           preparationController.signal,
         );
         if (targetContextId === "manager" && session.session.manager_runtime) {
+          managerRuntimeHasSessionReadback.current = true;
           setManagerRuntime(session.session.manager_runtime);
         }
         recordSessionAdmission(session.session);

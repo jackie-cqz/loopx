@@ -7,6 +7,7 @@ from .machine_profile import (
     manager_runtime_capability_projection,
     manager_runtime_machine_configuration_namespace,
     manager_runtime_session_fields,
+    manager_runtime_requires_new_thread,
     normalize_manager_runtime_profile,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "manager_runtime_capability_projection",
     "manager_runtime_machine_configuration_namespace",
     "manager_runtime_session_fields",
+    "manager_runtime_requires_new_thread",
     "normalize_manager_runtime_profile",
 ]

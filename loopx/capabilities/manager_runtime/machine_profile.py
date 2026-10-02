@@ -198,6 +198,19 @@ def manager_runtime_session_fields(profile: Mapping[str, Any]) -> dict[str, Any]
     }
 
 
+def manager_runtime_requires_new_thread(
+    session: Mapping[str, Any], profile: Mapping[str, Any]
+) -> bool:
+    """Rotate for execution authority changes, not readback-only metadata."""
+    if session.get("manager_runtime_profile") is None:
+        return profile["runtime_profile"] != RESTRICTED_PROFILE
+    fields = manager_runtime_session_fields(profile)
+    return any(session.get(key) != fields[key] for key in (
+        "manager_runtime_profile", "manager_runtime_sandbox",
+        "manager_runtime_standing_grant", "manager_runtime_tool_classes",
+    ))
+
+
 def manager_runtime_capability_projection(
     runtime_controller: object,
     model_configuration: Mapping[str, Any],
