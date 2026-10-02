@@ -763,3 +763,24 @@ def test_peer_exchange_survives_long_private_store_paths(scenario):
     assert replay["replayed"] and replay["request_id"] == rid
     requests = [path for path in (_root(long_root) / "entries").glob("*/*.json") if path.stem == rid]
     assert len(requests) == 1 and len(str(requests[0])) > 260
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Win32 binary input regression")
+def test_peer_binary_artifact_preserves_crlf_and_ctrl_z_digest(scenario):
+    root, registry, brief, *_ = scenario
+    content = b"before\r\n\x1aafter\r\n\x00\xff"
+    artifact = root / "inputs" / "packet.bin"
+    artifact.write_bytes(content)
+    digest = hashlib.sha256(content).hexdigest()
+    brief = {**brief, "inputs": [{"ref": "inputs/packet.bin",
+        "description": "Binary fixture", "sha256": digest}]}
+    packet = root / "binary-brief.json"
+    packet.write_text(json.dumps(brief), encoding="utf-8")
+    sent = cli(root, registry, "builder", "request", "--peer-agent-id", "reviewer",
+        "--operation-id", "binary-review", "--brief-file", str(packet))
+    item = cli(root, registry, "reviewer", "read")["items"][0]
+    assert item["request_id"] == sent["request_id"]
+    [readiness] = item["input_readiness"]
+    assert readiness["status"] == "available"
+    assert readiness["observed_sha256"] == readiness["expected_sha256"] == digest
+    assert readiness["content_supplied"] is False
