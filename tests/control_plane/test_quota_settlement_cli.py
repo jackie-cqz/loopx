@@ -30,6 +30,7 @@ from loopx.control_plane.scheduler.state import (
     load_scheduler_state,
 )
 from loopx.heartbeat_prompt import build_heartbeat_prompt
+from loopx.paths import shell_selected_global_registry
 from loopx.rollout_event_log import build_rollout_event
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -642,16 +643,36 @@ def _strip_heartbeat_workspace_causality(runtime: Path) -> None:
     )
 
 
+@pytest.mark.parametrize("legacy_runtime", [False, True])
 def test_gitless_goal_refresh_and_quota_spend_settle_end_to_end(
-    tmp_path: Path, monkeypatch,
+    tmp_path: Path, monkeypatch, legacy_runtime: bool,
 ) -> None:
     # Production quota CLI -> detached Python discovery -> TS cycle owner.
     # The isolated home also proves telemetry never reads the operator's sessions.
     from loopx import usage_ping
     import time
+
+    def await_cycle(*, finished: bool) -> dict[str, Any]:
+        # This observes an asynchronous local result, not an HTTP deadline.
+        # Process startup and competing tests must not become an 8s product rule.
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if cycles_path.exists():
+                cycles = json.loads(cycles_path.read_text())["cycles"]
+                if cycles and ("end" in cycles[0] if finished else "start" in cycles[0]):
+                    assert len(cycles) == 1
+                    return cycles[0]
+            time.sleep(0.03)
+        raise AssertionError(f"public quota/spend CLI did not observe cycle finished={finished}")
+
     home = tmp_path / "isolated-home"
-    machine = home / ".codex" / "loopx"
+    machine = home / (".codex/loopx" if legacy_runtime else ".loopx")
     machine.mkdir(parents=True)
+    if legacy_runtime:
+        (machine / "registry.global.json").write_text(
+            json.dumps({"common_runtime_root": str(machine), "goals": []}),
+            encoding="utf-8",
+        )
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
     monkeypatch.setenv("LOOPX_USAGE_PING_ENDPOINT", "http://127.0.0.1:1/v1/ping")
@@ -695,10 +716,7 @@ def test_gitless_goal_refresh_and_quota_spend_settle_end_to_end(
 
     # Preview/failed spend before validated delivery must not finish measurement.
     cycles_path = Path(str(usage_path) + ".cycles")
-    deadline = time.monotonic() + 8
-    while not cycles_path.exists() and time.monotonic() < deadline:
-        time.sleep(0.03)
-    assert "start" in json.loads(cycles_path.read_text())["cycles"][0]
+    await_cycle(finished=False)
     for execute in (False, True):
         _run_cli(registry_path, runtime, "quota", "spend-slot", "--goal-id", GOAL_ID,
                  "--slots", "1", "--source", "heartbeat", *binding,
@@ -756,18 +774,9 @@ def test_gitless_goal_refresh_and_quota_spend_settle_end_to_end(
     assert spend["delivery_workspace_validated"] is True
     assert spend["delivery_workspace"]["workspace_identity"] == f"loopx:{GOAL_ID}"
     assert _spend_run_count(runtime) == 1
-    cycles_path = Path(str(usage_path) + ".cycles")
-    deadline = time.monotonic() + 8
-    while time.monotonic() < deadline:
-        if cycles_path.exists():
-            cycles = json.loads(cycles_path.read_text())["cycles"]
-            if cycles and cycles[0].get("end"):
-                break
-        time.sleep(0.03)
-    else:
-        raise AssertionError("public quota/spend CLI did not complete a telemetry cycle")
-    assert len(cycles) == 1 and cycles[0]["exact"] is True
-    assert cycles[0]["start"] < cycles[0]["end"]
+    cycle = await_cycle(finished=True)
+    assert cycle["exact"] is True
+    assert cycle["start"] < cycle["end"]
     before_replay = cycles_path.read_bytes()
     replay_rc, replay = _run_cli(registry_path, runtime, "quota", "spend-slot", "--goal-id", GOAL_ID,
                                  "--slots", "1", "--source", "heartbeat", *binding,
@@ -2220,6 +2229,7 @@ def test_standard_codex_app_settlement_is_receipted_and_idempotent(
     identity = guard["heartbeat_receipt"]["settlement_identity"]
     assert identity["todo_id"] == TODO_ID
     assert identity["effect_id"] == (f"{GOAL_ID}:{AGENT_ID}:{TODO_ID}:{TURN_ID}")
+    original_ack_hint = guard["scheduler_hint"]["codex_app"]["ack_hint"]
 
     complete_args = (
         "todo",
@@ -2363,9 +2373,12 @@ def test_standard_codex_app_settlement_is_receipted_and_idempotent(
     )
     assert _spend_run_count(runtime) == 1
 
-    settled_ack_hint = settled_replay["scheduler_hint"]["codex_app"]["ack_hint"]
-    assert settled_ack_hint["args"]["turn_instance_id"] == TURN_ID
-    assert settled_ack_hint["cli_args"][-3:] == [
+    # A historical settlement receipt cannot issue a new scheduler operation.
+    assert settled_replay["scheduler_hint"]["action"] == "preserve_current_schedule"
+    for surface in ("app_automation", "codex_app"):
+        assert "ack_hint" not in settled_replay["scheduler_hint"][surface]
+    assert original_ack_hint["args"]["turn_instance_id"] == TURN_ID
+    assert original_ack_hint["cli_args"][-3:] == [
         "--turn-instance-id",
         TURN_ID,
         "--execute",
@@ -2373,7 +2386,7 @@ def test_standard_codex_app_settlement_is_receipted_and_idempotent(
     ack_rc, ack = _run_cli(
         registry_path,
         runtime,
-        *settled_ack_hint["cli_args"],
+        *original_ack_hint["cli_args"],
     )
     # The intervening fresh_guard superseded this Turn for host writeback,
     # even though its original delivery settlement still replays correctly.
@@ -2885,7 +2898,7 @@ def test_visible_goal_continuation_begins_turn_and_executes_returned_selection(
         thin=True,
     )
     guard_command = prompt["quota_guard_command"].replace(
-        "$HOME/.codex/loopx/registry.global.json",
+        shell_selected_global_registry().strip('"'),
         str(registry_path),
     )
 
@@ -2948,7 +2961,7 @@ def test_visible_goal_capability_reentry_preserves_turn_through_selection(
         thin=True,
     )
     guard_command = prompt["quota_guard_command"].replace(
-        "$HOME/.codex/loopx/registry.global.json",
+        shell_selected_global_registry().strip('"'),
         str(registry_path),
     )
 
@@ -3149,7 +3162,7 @@ def test_host_runtime_profile_selects_spend_source_through_real_settlement(
     # The thin body tells the agent to mint LOOPX_TURN per iteration.
     guard_command = (
         prompt["quota_guard_command"]
-        .replace("$HOME/.codex/loopx/registry.global.json", str(registry_path))
+        .replace(shell_selected_global_registry().strip('"'), str(registry_path))
         .replace('"${LOOPX_TURN:?}"', turn_instance_id)
     )
     assert f"--runtime-profile {runtime_profile}" in guard_command

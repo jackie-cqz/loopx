@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {conversationImageRequestScenario} from "./personal-workspace-browser/conversation-image-request.mjs";
 // Isolated browser acceptance scenarios for the personal Agent workspace.
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -15,6 +16,7 @@ import { chatRecoveryScenario } from "./personal-workspace-browser/chat-recovery
 import { composerSessionAdmissionScenario } from "./personal-workspace-browser/composer-session-admission.mjs";
 import { attachedHostFollowUpScenario } from "./personal-workspace-browser/attached-host-follow-up.mjs";
 import { conversationReturnContinuityScenario } from "./personal-workspace-browser/conversation-return-continuity.mjs";
+import { workspaceViewRecoveryScenario } from "./personal-workspace-browser/workspace-view-recovery.mjs";
 import { conversationHistoryRecoveryScenario } from "./personal-workspace-browser/conversation-history-recovery.mjs";
 import { executionChipScenario } from "./personal-workspace-browser/execution-chip.mjs";
 import {
@@ -29,6 +31,7 @@ import {
 import { navigationSortingScenario } from "./personal-workspace-browser/navigation-sorting.mjs";
 import { capabilityScopeScenario } from "./personal-workspace-browser/capability-scope.mjs";
 import { automationCadenceScenario } from "./personal-workspace-browser/automation-cadence.mjs";
+import { monitorReadbackScenario } from "./personal-workspace-browser/monitor-readback.mjs";
 import { teamEvidenceScenario } from "./personal-workspace-browser/team-evidence.mjs";
 import { managedGoalResultsScenario } from "./personal-workspace-browser/managed-goal-results.mjs";
 import { loopxModeScenario } from "./personal-workspace-browser/loopx-mode.mjs";
@@ -44,6 +47,7 @@ import { newestDraftScenario } from "./personal-workspace-browser/newest-draft.m
 
 import { conversationInputScenario } from "./personal-workspace-browser/conversation-input.mjs";
 import { goalActivityScenario } from "./personal-workspace-browser/goal-activity.mjs";
+import { goalWorkMapScenario } from "./personal-workspace-browser/goal-work-map.mjs";
 
 import { stewardGroupTriggerScenario } from "./personal-workspace-browser/steward-group-trigger.mjs";
 
@@ -52,9 +56,14 @@ import { larkCliMissingScenario } from "./personal-workspace-browser/lark-cli-mi
 import { executionServiceOfflineScenario } from "./personal-workspace-browser/execution-service-offline.mjs";
 
 import { conversationStartupScenario } from "./personal-workspace-browser/conversation-startup.mjs";
+import { chatTodoProposalScenario } from "./personal-workspace-browser/chat-todo-proposal.mjs";
 
-const scenarioCatalog = [conversationStartupScenario,goalDraftScenario, capabilityScopeScenario, stewardGroupTriggerScenario, conversationInputScenario, goalActivityScenario, conversationActivityScenario, navigationSortingScenario, automationCadenceScenario, chatRecoveryScenario, composerSessionAdmissionScenario, attachedHostFollowUpScenario, conversationReturnContinuityScenario, conversationHistoryRecoveryScenario, answerPresentationScenario, loopxModeScenario, teamEvidenceScenario, managedGoalResultsScenario, typedActionsScenario, teamPlanScenario, stewardJourneyScenario, executionChipScenario, stewardModelSettingsScenario, progressiveLoadingScenario, workspaceLocaleScenario, newestDraftScenario, larkCliMissingScenario, executionServiceOfflineScenario];
+const scenarioCatalog = [conversationStartupScenario,goalDraftScenario, capabilityScopeScenario, stewardGroupTriggerScenario, conversationInputScenario, goalActivityScenario, conversationActivityScenario, navigationSortingScenario, automationCadenceScenario, chatRecoveryScenario, composerSessionAdmissionScenario, attachedHostFollowUpScenario, conversationReturnContinuityScenario, conversationHistoryRecoveryScenario, answerPresentationScenario, loopxModeScenario, teamEvidenceScenario, managedGoalResultsScenario, typedActionsScenario, teamPlanScenario, stewardJourneyScenario, executionChipScenario, stewardModelSettingsScenario, progressiveLoadingScenario, workspaceLocaleScenario, newestDraftScenario, larkCliMissingScenario, executionServiceOfflineScenario, chatTodoProposalScenario];
 scenarioCatalog.push(confirmedOperationsScenario);
+scenarioCatalog.push(conversationImageRequestScenario);
+scenarioCatalog.push(workspaceViewRecoveryScenario);
+scenarioCatalog.push(monitorReadbackScenario);
+scenarioCatalog.push(goalWorkMapScenario);
 const requestedScenario = process.env.LOOPX_PERSONAL_WORKSPACE_SCENARIO;
 const scenarios = requestedScenario
   ? scenarioCatalog.filter((scenario) => scenario.id === requestedScenario)
@@ -70,7 +79,7 @@ async function main() {
     );
   }
   await mkdir(outputDir, { recursive: true });
-  const server = startServer();
+  const server = await startServer();
   let browser;
   const results = {};
   const coverageEntries = [];
