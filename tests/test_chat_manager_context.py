@@ -1264,3 +1264,79 @@ def test_current_external_scope_is_fresh_and_excludes_other_labels(
     )
     assert revoked["goals"] == []
     assert reads == ["currently-authorized"]
+
+
+@pytest.mark.parametrize("initial,updated", [(None, "restricted"), ("restricted", "invalid")])
+def test_profile_readback_metadata_updates_without_rotating_thread(monkeypatch, tmp_path, initial, updated):
+    store = ChatSessionStore(tmp_path / "runtime")
+    runtime = ChatRuntimeController(store=store, codex_bin="codex")
+    monkeypatch.setattr(runtime, "capabilities", lambda: [
+        {"agent_id": "codex", "available": True, "adapter_kind": "codex_app_server"}])
+    starts = []
+    def start(**kwargs):
+        starts.append(kwargs)
+        return Adapter()
+    monkeypatch.setattr(runtime, "_start_adapter", start)
+    if initial:
+        _apply_manager_runtime_profile(tmp_path / "runtime", initial)
+    session, _ = runtime.open_session(goal_id="loopx-manager", agent_id="codex",
+        work_dir=tmp_path, objective="fixture", mode="new", channel_id="manager")
+    if updated == "invalid":
+        path = tmp_path / "runtime" / "machine" / "configuration.json"
+        data = json.loads(path.read_text())
+        data["namespaces"]["manager_runtime"]["runtime_profile"] = "invalid"
+        path.write_text(json.dumps(data))
+    else:
+        _apply_manager_runtime_profile(tmp_path / "runtime", updated)
+    adapter = runtime._ensure_adapter(session, work_dir=tmp_path, objective="fixture")
+    assert len(starts) == 1 and adapter is runtime.adapters[session["session_id"]]
+    current = store.load_session(session["session_id"])
+    assert current["upstream_thread_id"] == session["upstream_thread_id"]
+    assert current["manager_runtime_configuration_revision"] != session["manager_runtime_configuration_revision"]
+    assert current["manager_runtime_status"] == ("configuration_invalid" if updated == "invalid" else "ready")
+
+
+def test_unsubmitted_manager_recreates_thread_but_attempted_turn_preserves_binding(monkeypatch, tmp_path):
+    from loopx.chat_runtime import CodexAppServerAdapter
+    from loopx.chat_store import UpstreamTurnDispatch
+
+    store = ChatSessionStore(tmp_path / "runtime")
+    starts = []
+    def controller():
+        runtime = ChatRuntimeController(store=store, codex_bin="codex")
+        monkeypatch.setattr(runtime, "capabilities", lambda: [
+            {"agent_id": "codex", "available": True, "adapter_kind": "codex_app_server"}])
+        def start(**kwargs):
+            starts.append(kwargs)
+            thread = kwargs.get("resume_thread_id") or f"fixture-upstream-{len(starts)}"
+            return CodexAppServerAdapter(SimpleNamespace(thread_id=thread,
+                process=SimpleNamespace(poll=lambda: None), close=lambda: None))
+        monkeypatch.setattr(runtime, "_start_adapter", start)
+        return runtime
+    first = controller()
+    original, _ = first.open_session(goal_id="loopx-manager", agent_id="codex",
+        work_dir=tmp_path, objective="fixture", mode="new", channel_id="manager")
+    store.append_message(original["session_id"], role="user", text="Retain this constraint", turn_id=None)
+    first.close()
+    second = controller()
+    restored, _ = second.open_session(goal_id="loopx-manager", agent_id="codex",
+        work_dir=tmp_path, objective="fixture", mode="resume_latest", channel_id="manager")
+    assert restored["session_id"] == original["session_id"]
+    assert starts[-1]["resume_thread_id"] is None
+    assert restored["upstream_thread_id"] != original["upstream_thread_id"]
+    assert any(row["content"] == "Retain this constraint" for row in starts[-1]["history"])
+    turn = store.accept_managed_turn(restored["session_id"], client_turn_id="attempt", message="Fixture")
+    assert not store.mark_upstream_turn_attempted(restored["session_id"], turn.turn["turn_id"], "another-thread")
+    assert store.load_session(restored["session_id"])["upstream_turn_dispatch"] == UpstreamTurnDispatch.NOT_ATTEMPTED.value
+    assert store.mark_upstream_turn_attempted(restored["session_id"], turn.turn["turn_id"], restored["upstream_thread_id"])
+    second.close()
+    third = controller()
+    resumed, _ = third.open_session(goal_id="loopx-manager", agent_id="codex",
+        work_dir=tmp_path, objective="fixture", mode="resume_latest", channel_id="manager")
+    assert starts[-1]["resume_thread_id"] == restored["upstream_thread_id"]
+    assert resumed["upstream_thread_id"] == restored["upstream_thread_id"]
+    assert starts[-1]["history"] is None
+    assert store.load_turn(restored["session_id"], turn.turn["turn_id"])["status"] == "failed"
+    third.close()
+    with pytest.raises(ValueError):
+        store.update_session(restored["session_id"], upstream_turn_dispatch="unknown")

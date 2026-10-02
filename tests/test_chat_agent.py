@@ -12,10 +12,13 @@ import pytest
 
 
 class _FakeAppServerProcess:
-    def __init__(self) -> None:
+    def __init__(self, *, sandbox=None, approval_policy=None) -> None:
+        policy = ({"sandbox": sandbox} if sandbox is not None else {})
+        if approval_policy is not None:
+            policy["approvalPolicy"] = approval_policy
         responses = [
             {"id": 1, "result": {"serverInfo": {"name": "fake-codex"}}},
-            {"id": 2, "result": {"thread": {"id": "thread-loopx-chat"}}},
+            {"id": 2, "result": {"thread": {"id": "thread-loopx-chat"}, **policy}},
         ]
         self.stdin = io.StringIO()
         self.stdout = io.StringIO(
@@ -312,7 +315,7 @@ def test_trusted_manager_profile_reaches_app_server_and_turn_prompt(
     monkeypatch,
     tmp_path,
 ):
-    process = _FakeAppServerProcess()
+    process = _FakeAppServerProcess(sandbox={"type": "dangerFullAccess"}, approval_policy="never")
     monkeypatch.setattr(chat_agent.shutil, "which", lambda _: "codex")
     monkeypatch.setattr(chat_agent.subprocess, "Popen", lambda *a, **k: process)
     session = chat_agent.CodexChatAgentSession.start(
@@ -610,3 +613,21 @@ def test_retry_and_unrelated_policy_events_do_not_terminate_current_turn(
     assert result["message"] == "Recovered."
     assert any(k == "agent.phase" and p["label"] == "Codex 正在重试" for k, p in events)
     assert sum(k == "answer.final" for k, p in events) == 1
+
+
+@pytest.mark.parametrize("profile,sandbox,approval", [
+    ("trusted_owner", None, None),
+    ("trusted_owner", {"type": "readOnly"}, "never"),
+    ("trusted_owner", {"type": "dangerFullAccess"}, "on-request"),
+    ("restricted", {"type": "dangerFullAccess"}, "never"),
+    ("restricted", {"type": "readOnly"}, "on-request"),
+])
+def test_host_policy_mismatch_is_rejected_before_session_delivery(monkeypatch, tmp_path, profile, sandbox, approval):
+    process = _FakeAppServerProcess(sandbox=sandbox, approval_policy=approval)
+    monkeypatch.setattr(chat_agent.shutil, "which", lambda _: "codex")
+    monkeypatch.setattr(chat_agent.subprocess, "Popen", lambda *a, **k: process)
+    with pytest.raises(chat_agent.CodexChatAgentError) as caught:
+        chat_agent.CodexChatAgentSession.start(codex_bin="codex", work_dir=tmp_path,
+            goal_id="loopx-manager", objective="fixture", runtime_profile=profile)
+    assert caught.value.error_code == "manager_runtime_profile_unverified"
+    assert process.poll() is not None

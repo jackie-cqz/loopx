@@ -301,7 +301,7 @@ server.serve_forever()
       server.stderr.on("data", (chunk) => { diagnostic = (diagnostic + chunk).slice(-8000); });
       server.stdout.on("data", (chunk) => {
         output += chunk;
-        if (output.includes("loopx-packaged-smoke-ready\n")) {
+        if (/loopx-packaged-smoke-ready\r?\n/u.test(output)) {
           clearTimeout(timer);
           resolveReady();
         }
@@ -423,6 +423,7 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
 
   const actionKinds = new Map(Array.from(actionProposals.values(), (proposal) => [proposal.proposal_id, proposal.action_kind]));
   const state = {
+    managerSessionRuntime: null,
     nextLifecycleProposalPatch: null,
     nextLifecycleApplyOutcome: null,
     loseNextTeamPlanResponse: false,
@@ -1542,6 +1543,9 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
       const session_id = `session-${body.context_kind}-${resolvedGoalId}-${resolvedAgentId}`;
       const existing = body.mode === "resume_latest" ? sessions.get(session_id) : null;
       const session = existing ?? { session_id, goal_id: resolvedGoalId, agent_id: resolvedAgentId, adapter_kind: resolvedAgentId === "codex" ? "codex_app_server" : resolvedAgentId === "claude-code" ? "claude_code_cli" : "acp", channel_id: body.context_kind === "manager" ? "manager" : `goal.${body.goal_id}`, status: "ready", active_turn_id: null, last_error_code: null, created_at: "2026-08-13T01:00:00Z", updated_at: "2026-08-13T01:00:00Z", last_activity_at: "2026-08-13T01:00:00Z", resumable: true, ...(body.context_kind === "manager" ? { manager_runtime: { schema_version: "manager_runtime_session_readback_v0", runtime_profile: "restricted", configuration_revision: "absent", status: "ready", sandbox: "read-only", standing_grant: "none", tool_classes: ["loopx_core"] } } : {}) };
+      if (body.context_kind === "manager" && state.managerSessionRuntime) {
+        session.manager_runtime = structuredClone(state.managerSessionRuntime);
+      }
       sessions.set(session_id, session);
       messages.set(session_id, messages.get(session_id) ?? []);
       await route.fulfill({ contentType: "application/json", json: { ok: true, agent_id: resolvedAgentId, goal_id: body.goal_id, resumed: body.mode === "resume_latest", session_id, session }, status: 201 });
@@ -1688,6 +1692,9 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
     const snapshot = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)$/);
     if (snapshot && request.method() === "GET") {
       const session = sessions.get(snapshot[1]);
+      if (session?.channel_id === "manager" && state.managerSessionRuntime) {
+        session.manager_runtime = structuredClone(state.managerSessionRuntime);
+      }
       await route.fulfill({ contentType: "application/json", json: { ok: true, schema_version: "loopx_chat_store_v1", session, messages: messages.get(snapshot[1]) ?? [], active_turn: session?.active_turn_id ? { turn_id: session.active_turn_id, status: "running", response: null } : null }, status: session ? 200 : 404 });
       return;
     }
