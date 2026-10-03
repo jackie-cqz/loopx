@@ -78,26 +78,37 @@ def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str, tod
     return call, runtime, index
 
 
+def _admitted_guard(call, todo_bound: bool) -> dict:
+    guard_args = ("quota", "should-run", "--codex-app", "--goal-id", GOAL,
+                  "--agent-id", AGENT, "--turn-instance-id", TURN)
+    guard = call(*guard_args)
+    if todo_bound:
+        # The planning recommendation has no settlement authority. An explicit
+        # choice may be retained during hard replan and bound only on reentry.
+        assert "settlement_identity" not in guard["heartbeat_receipt"]
+        rejected = call("native-child", "--goal-id", GOAL, "--agent-id", AGENT,
+            "--turn-instance-id", TURN, "record", "--operation-id", "op-before-choice",
+            "--stage", "decision", "--operation", "spawn", "--outcome", "started",
+            "--entrypoint-id", "generic_host", "--execute", expected_code=1)
+        assert "admitted" in rejected["error"]
+        deferred = call(*guard_args, "--todo-id", TODO, expected_code=1)
+        assert deferred["action_selection_qualification"]["state"] == "deferred"
+        assert "settlement_identity" not in deferred["heartbeat_receipt"]
+        [reentry] = deferred["interaction_contract"]["cli_channel"]["next_cli_actions"]
+        guard = call(*shlex.split(reentry)[1:])
+        assert guard["heartbeat_receipt"]["pending_action_selection"]["settlement_bound"] is True
+        assert guard["retained_action_selection"]["disposition"] == "preserve_retained_todo"
+    return guard
+
+
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
 @pytest.mark.parametrize("todo_bound", [True, False])
 def test_legal_replan_reports_native_child_without_settling_parent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str, todo_bound: bool,
 ) -> None:
     call, runtime, index = _fixture(tmp_path, monkeypatch, provider, todo_bound)
-    guard = call("quota", "should-run", "--codex-app", "--goal-id", GOAL,
-                 "--agent-id", AGENT, "--turn-instance-id", TURN)
+    guard = _admitted_guard(call, todo_bound)
     assert guard["decision"] == "autonomous_replan_required", guard
-    if todo_bound:
-        # A recommendation does not bind the hard-replan Turn. Choose the
-        # existing Todo, then follow its retained-selection recovery command.
-        assert "settlement_identity" not in guard["heartbeat_receipt"]
-        assert guard["interaction_contract"]["cli_channel"]["selection_required"]
-        deferred = call("quota", "should-run", "--codex-app", "--goal-id", GOAL,
-                        "--agent-id", AGENT, "--turn-instance-id", TURN,
-                        "--todo-id", TODO, expected_code=1)
-        assert deferred["action_selection_qualification"]["state"] == "deferred"
-        [reentry] = deferred["interaction_contract"]["cli_channel"]["next_cli_actions"]
-        guard = call(*shlex.split(reentry)[1:])
     identity = guard["heartbeat_receipt"]["settlement_identity"]
     assert identity.get("todo_id") == (TODO if todo_bound else None)
     assert bool(identity.get("replan_obligation_id")) is not todo_bound
