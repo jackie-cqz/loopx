@@ -46,6 +46,7 @@ BUILTIN_IDS = [
     "performance-diagnosis",
     "reliability-diagnostics",
     "progress-review-sentinel",
+    "goal-capability-organization",
 ]
 
 
