@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
-from .control_plane.todos.provider_handoff_mode import (
+from ..control_plane.todos.provider_handoff_mode import (
     migrate_registered_handoff_mode,
     read_canonical_handoff_mode,
 )
