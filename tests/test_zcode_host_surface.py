@@ -10,6 +10,7 @@ the facade dead-ends at argparse and the surface is decorative.
 from __future__ import annotations
 
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -57,6 +58,11 @@ def test_agent_onboarding_setup_command_installs_the_zcode_surface(
         "HOME": str(tmp_path / "home"),
         ZCODE_HOME_ENV: str(tmp_path / "zcode"),
     }
+    if os.name == "nt":
+        env["USERPROFILE"] = env["HOME"]
+        env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+        env["PATH"] = str(Path(shutil.which("node") or "").parent)
+        env["PYTHONUTF8"] = "1"
     if "PYTHONPATH" in os.environ:  # keep hermetic when run from a worktree
         env["PYTHONPATH"] = os.environ["PYTHONPATH"]
 
@@ -73,6 +79,7 @@ def test_zcode_home_env_override_wins_over_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setenv(ZCODE_HOME_ENV, str(tmp_path / "custom-zcode"))
     assert zcode_home() == tmp_path / "custom-zcode"
     monkeypatch.delenv(ZCODE_HOME_ENV, raising=False)
