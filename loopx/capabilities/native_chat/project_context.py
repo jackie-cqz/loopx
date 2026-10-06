@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping
 
 from ...control_plane.effect_runtime import EffectRuntimeRejected, effect_runtime_result
 from ...presentation.answer_instruction import conversation_answer_instruction
@@ -128,3 +128,22 @@ def coordination_runtime_root(registry_path: Path | None, chat_root: Path) -> Pa
     # Session/Turn admission still enforces the runtime profile and Goal lifetime.
     registry = load_project_registry(registry_path)
     return resolve_runtime_root(registry, registry_path=registry_path) if registry.get("common_runtime_root") else chat_root
+
+
+def validate_project_executor_scope(
+    agent_id: str,
+    project_context: Mapping[str, object],
+    capabilities: Callable[[], list[dict[str, object]]],
+    capability: Mapping[str, object] | None = None,
+) -> None:
+    if project_context.get("grant") != "workspace_read":
+        return
+    selected = capability or next(
+        (row for row in capabilities() if row["agent_id"] == agent_id), None
+    )
+    if selected is None:
+        raise ValueError(f"unknown Agent endpoint: {agent_id}")
+    if selected.get("trust_scope") != "read_only":
+        raise ValueError(
+            "the selected Agent cannot enforce a read-only project workspace"
+        )

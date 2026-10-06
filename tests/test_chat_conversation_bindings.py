@@ -160,3 +160,110 @@ def test_binding_replacement_or_identity_change_cannot_move_existing_context(tmp
         bindings.disconnect(new["binding_id"], expected_revision=0)
     assert bindings.read()["bindings"][0]["binding_id"] == new["binding_id"]
     assert bindings.path.stat().st_mode & 0o777 == 0o600
+
+
+def test_read_only_bound_project_rejects_write_scoped_executor_before_session_creation(
+    ordinary, monkeypatch  # noqa: F811
+):
+    store, runtime, contexts, _, _, _, workspace = ordinary
+    observations = {
+        "notes-app": {
+            "transport_ref": "notes-app",
+            "provider_ref": "c" * 24,
+            "operator_ref": "d" * 24,
+            "verified": True,
+        }
+    }
+    bindings = ChatConversationBindings(
+        root=store.root, project_contexts=contexts, observe=lambda profile: observations[profile]
+    )
+    contexts.conversation_bindings = bindings
+    project_ref = contexts.available()[0]["project_ref"]
+    binding = bindings.configure(
+        transport_ref="notes-app",
+        project_ref=project_ref,
+        executor_endpoint_id="kiro-cli",
+        project_grant="workspace_read",
+    )
+    monkeypatch.setattr(
+        "loopx.chat_endpoint_catalog.shutil.which",
+        lambda executable: executable if executable == "kiro-cli" else None,
+    )
+    starts = []
+
+    class FakeWriteScopedAdapter:
+        upstream_thread_id = "must-not-be-started"
+
+        def close_session(self):
+            pass
+
+    start_adapter = runtime._start_adapter
+    runtime._start_adapter = lambda **kwargs: starts.append(kwargs) or FakeWriteScopedAdapter()
+    source_context = {
+        "source_ref": "a" * 24,
+        "sender_ref": binding["operator_ref"],
+        "private_human_message": True,
+    }
+
+    with pytest.raises(ValueError, match="read-only"):
+        runtime.open_session(
+            goal_id=None,
+            agent_id="kiro-cli",
+            work_dir=workspace,
+            objective="untrusted",
+            mode="resume_latest",
+            conversation_binding_id=binding["binding_id"],
+            source_context=source_context,
+        )
+
+    assert starts == []
+    assert store.latest_session(
+        goal_id=None, agent_id="kiro-cli", channel_id=f"project.{project_ref}"
+    ) is None
+
+    # Selecting an actually read-only executor still lets the bound conversation
+    # start, complete a request, and replay its idempotency key.
+    read_only_binding = bindings.configure(
+        transport_ref="notes-app",
+        project_ref=project_ref,
+        executor_endpoint_id="codex",
+        project_grant="workspace_read",
+    )
+    monkeypatch.setattr(
+        "loopx.chat_endpoint_catalog.shutil.which",
+        lambda executable: executable
+        if executable in {"kiro-cli", runtime.codex_bin}
+        else None,
+    )
+    runtime._start_adapter = start_adapter
+    session, resumed = runtime.open_session(
+        goal_id=None,
+        agent_id="codex",
+        work_dir=workspace,
+        objective="untrusted",
+        mode="resume_latest",
+        conversation_binding_id=read_only_binding["binding_id"],
+        source_context=source_context,
+    )
+    assert not resumed
+    turn, created = runtime.enqueue_turn(
+        session_id=session["session_id"],
+        client_turn_id="read-only-bound-project-turn",
+        message="summarize the workspace",
+        work_dir=workspace,
+        objective="untrusted",
+        origin="lark",
+    )
+    assert created
+    assert runtime.wait_for_turn(
+        session_id=session["session_id"], turn_id=turn["turn_id"], timeout_sec=10
+    )["status"] == "completed"
+    replay, replayed = runtime.enqueue_turn(
+        session_id=session["session_id"],
+        client_turn_id="read-only-bound-project-turn",
+        message="summarize the workspace",
+        work_dir=workspace,
+        objective="untrusted",
+        origin="lark",
+    )
+    assert not replayed and replay["turn_id"] == turn["turn_id"]

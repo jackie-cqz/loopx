@@ -154,6 +154,43 @@ def test_writable_project_turns_use_project_skills_without_manager_work_selectio
     assert session["project_context"]["grant"] == "workspace_write"
     assert len(store.list_sessions()) == 1
     assert not (workspace / "ACTIVE_GOAL_STATE.md").exists()
+def test_read_only_project_rejects_executor_with_workspace_write_scope(ordinary, monkeypatch):
+    store, runtime, contexts, request, _, _, _ = ordinary
+
+    class FakeWriteScopedAdapter:
+        upstream_thread_id = "write-scoped-project-agent"
+
+        def close_session(self):
+            pass
+
+    monkeypatch.setattr(
+        "loopx.chat_endpoint_catalog.shutil.which",
+        lambda executable: executable if executable == "kiro-cli" else None,
+    )
+    kiro_capability = next(row for row in runtime.capabilities() if row["agent_id"] == "kiro-cli")
+    assert kiro_capability["trust_scope"] == "workspace_write"
+    runtime._start_adapter = lambda **_: FakeWriteScopedAdapter()
+    project_ref = contexts.available()[0]["project_ref"]
+    status, result = request("/api/chat/sessions", {
+        "context_kind": "project", "project_ref": project_ref, "agent_id": "kiro-cli",
+    })
+
+    assert status == 400, result
+    assert "read-only" in result.get("error", "").lower()
+    assert store.latest_session(goal_id=None, agent_id="kiro-cli", channel_id=f"project.{project_ref}") is None
+
+    project_context = contexts.available()[0]
+    legacy = store.create_session(
+        goal_id=None, agent_id="kiro-cli", adapter_kind="acp",
+        upstream_thread_id="pre-guard-write-scoped-session",
+        channel_id=f"project.{project_ref}", project_context=project_context,
+    )
+    status, result = request(
+        f"/api/chat/sessions/{legacy['session_id']}/turns",
+        {"message": "read this workspace", "client_turn_id": "must-not-be-accepted"},
+    )
+    assert status == 400, result
+    assert store.turn_for_client(legacy["session_id"], "must-not-be-accepted") is None
 
 
 def test_retargeted_symlink_does_not_rebind_a_project_grant(tmp_path):

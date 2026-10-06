@@ -19,7 +19,7 @@ from .chat_manager import (
     manager_session_model_allocation,
 )
 from .chat_coordination import PROJECT_COORDINATION_GUIDANCE, PROJECT_CONTEXT_VERSION
-from .capabilities.native_chat.project_context import ChatProjectContexts
+from .capabilities.native_chat import project_context as project_context_policy
 from .control_plane.collaboration import conversation_scope
 from .capabilities.manager_runtime import (
     load_effective_manager_runtime_profile, manager_runtime_session_fields,
@@ -300,14 +300,14 @@ class ChatRuntimeController:
         endpoint_registry: AgentEndpointRegistry | None = None,
         registry_path: Path | None = None,
         manager_scope_resolver: Callable[[dict[str, Any]], list[str] | None] | None = None,
-        project_contexts: ChatProjectContexts | None = None,
+        project_contexts: project_context_policy.ChatProjectContexts | None = None,
     ) -> None:
         self.store = store
         self.registry_path = registry_path
         from .capabilities.native_chat.project_context import coordination_runtime_root
         self.coordination_runtime_root = coordination_runtime_root(registry_path, store.root.parent)
         self.manager_scope_resolver = manager_scope_resolver
-        self.project_contexts = project_contexts or ChatProjectContexts([])
+        self.project_contexts = project_contexts or project_context_policy.ChatProjectContexts([])
         self.codex_bin = codex_bin
         # Capture once; the service's startup environment is not session identity.
         self.codex_home = Path(
@@ -602,6 +602,8 @@ class ChatRuntimeController:
             work_dir, objective = context["project"], context["objective"]
         elif goal_id is None:
             raise ValueError("goal_id or an authorized project_ref is required")
+        if project_context is not None:
+            project_context_policy.validate_project_executor_scope(agent_id, project_context, self.capabilities, capability)
         manager_runtime = (
             self.manager_runtime_profile(selected_channel)
             if is_manager_channel(selected_channel)
@@ -753,6 +755,7 @@ class ChatRuntimeController:
             self.project_contexts.session_context(session)
         if session.get("project_context") is not None:
             context = self.project_contexts.session_context(session)
+            project_context_policy.validate_project_executor_scope(str(session["agent_id"]), session["project_context"], self.capabilities)
             work_dir, objective = context["project"], context["objective"]
         manager_runtime = (
             self.manager_runtime_profile(str(session.get("channel_id") or "manager"))
@@ -1012,6 +1015,7 @@ class ChatRuntimeController:
             if session["project_context"].get("audience") == "bound_owner":
                 raise ValueError("bound project Chat requires its external source admission")
             context = self.project_contexts.session_context(session)
+            project_context_policy.validate_project_executor_scope(str(session["agent_id"]), session["project_context"], self.capabilities)
             work_dir, objective = context["project"], context["objective"]
             if loopx_execution:
                 raise ValueError("ordinary project conversations do not authorize LoopX execution")
@@ -1286,6 +1290,7 @@ class ChatRuntimeController:
             if conversation_scope(session, origin=origin)["kind"] != "project_workspace":
                 raise ValueError("project grant does not authorize this external audience or source")
             context = self.project_contexts.session_context(session)
+            project_context_policy.validate_project_executor_scope(str(session["agent_id"]), session["project_context"], self.capabilities)
             work_dir, objective = context["project"], context["objective"]
         if session.get("session_mode") == CHAT_SESSION_MODE_ATTACHED:
             if attachments:
@@ -1577,6 +1582,7 @@ class ChatRuntimeController:
             session = self.store.load_session(session_id) or {}
             if session.get("project_context") is not None:
                 self.project_contexts.session_context(session)
+                project_context_policy.validate_project_executor_scope(str(session["agent_id"]), session["project_context"], self.capabilities)
             from .chat_coordination import prepare_turn_context
             scope = conversation_scope(session, origin=str((self.store.load_turn(session_id, turn_id) or {}).get("origin") or "unknown"))
             if isinstance(adapter, CodexAppServerAdapter):
