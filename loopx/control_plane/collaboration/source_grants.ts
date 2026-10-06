@@ -74,6 +74,45 @@ export function resolveSourceRecipients(params: JsonObject): JsonObject {
     a.goal_id.localeCompare(b.goal_id) || a.agent_id!.localeCompare(b.agent_id!)) };
 }
 
+/** A separate, exact operator grant for existing governed work. Context delivery
+ * alone never authorizes launch; neither models nor sources choose host profiles.
+ */
+export function sourceExecutionBindings(params: JsonObject): JsonObject {
+  const source = requireJsonObject(params.source, "source policy");
+  const authorized = resolveSourceRecipients(params).targets as Recipient[];
+  const available = recipients(params.available, "registered recipients", true);
+  const rows = Object.hasOwn(source, "execution_bindings") ? source.execution_bindings : [];
+  if (!Array.isArray(rows) || rows.length > 100) {
+    throw new EffectRuntimeRequestError("bounded source execution bindings required");
+  }
+  const bindings = rows.map(raw => {
+    const row = requireJsonObject(raw, "source execution binding");
+    const keys = ["goal_id", "agent_id", "requester_agent_id", "binding_id"];
+    if (Object.keys(row).some(key => !keys.includes(key)) || keys.some(key => !Object.hasOwn(row, key))) {
+      throw new EffectRuntimeRequestError("exact source execution binding fields required");
+    }
+    const binding: JsonObject = {};
+    for (const key of keys) {
+      const id = requireNonEmptyString(row[key], key);
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$/.test(id)) {
+        throw new EffectRuntimeRequestError("invalid source execution binding identity");
+      }
+      binding[key] = id;
+    }
+    if (binding.requester_agent_id === binding.agent_id) {
+      throw new EffectRuntimeRequestError("execution requester must be an independent registered Agent");
+    }
+    return binding;
+  });
+  const identities = bindings.map(row => JSON.stringify([row.goal_id, row.agent_id, row.binding_id]));
+  if (new Set(identities).size !== identities.length) {
+    throw new EffectRuntimeRequestError("ambiguous source execution binding");
+  }
+  return {bindings: bindings.filter(row =>
+    authorized.some(target => target.goal_id === row.goal_id && target.agent_id === row.agent_id)
+    && available.some(target => target.goal_id === row.goal_id && target.agent_id === row.requester_agent_id))};
+}
+
 /** Plan one trusted-local configuration change; the adapter owns locking and IO.
  * Missing agent_id chooses the managed Goal, explicit Agent chooses an exception.
  */

@@ -87,6 +87,10 @@ def test_http_ordinary_project_continues_native_session_without_goal_or_portfoli
     assert len([row for row in requests if row.get("method") == "turn/start"]) == 2
     assert not any(row.get("method", "").startswith("thread/goal") for row in requests)
     assert "Fresh Core evidence" not in capture.read_text() and "None:" not in capture.read_text()
+    # The real host context gets answer guidance even on the structured-output
+    # project lane, which does not use the older Chat review prompt.
+    assert "A simple question needs no report template" in capture.read_text()
+    assert "Preserve requested substantive detail" in capture.read_text()
     assert not (workspace / "ACTIVE_GOAL_STATE.md").exists()
 
 

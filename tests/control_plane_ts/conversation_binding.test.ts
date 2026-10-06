@@ -16,6 +16,20 @@ const current = {schema_version: "loopx_chat_conversation_bindings_v0", revision
 const request = {current, expected_revision: 0, operation: "configure", binding: row, observation,
   available_projects: [project]};
 
+test("images use the managed conversation and never disappear into commands or an attached host", () => {
+  const request = {request_ref: "e".repeat(24), command: null};
+  assert.equal(planBoundConversationRequest({request, current_session: null, attachment_count: 1}).operation, "admit_turn");
+  for (const command of ["stop", "new", "select_agent", "commission"]) {
+    assert.equal(planBoundConversationRequest({request: {...request, command}, current_session: null,
+      attachment_count: 1}).response_code, "unsupported_attachment");
+  }
+  assert.equal(planBoundConversationRequest({request, current_session: null, attachment_count: 1,
+    agent_target: {session_id: "existing-host"}}).response_code, "unsupported_attachment");
+  for (const count of [-1, 5, 0.5, "1"]) {
+    assert.throws(() => planBoundConversationRequest({request, current_session: null, attachment_count: count}), /attachment count/);
+  }
+});
+
 test("owner steward scope reads the current registry, preserves its Session and never widens a project or legacy scope", () => {
   const steward = {...row, context_kind: "steward", grant: "portfolio_read", goal_ids: [], goal_scope: "all_registered"};
   const next = planConversationBinding({...request, binding: steward}).state;

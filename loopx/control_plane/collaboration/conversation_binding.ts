@@ -266,6 +266,10 @@ export function planBoundConversationRequest(params: JsonObject): JsonObject {
   const row = requireJsonObject(params.request, "external request");
   const request = ref(row.request_ref, "external request identity");
   const command = row.command;
+  const imageCount = params.attachment_count ?? 0;
+  if (!Number.isSafeInteger(imageCount) || Number(imageCount) < 0 || Number(imageCount) > 4) {
+    throw new EffectRuntimeRequestError("invalid external image attachment count");
+  }
   if (![null, "agents", "select_agent", "select_project", "status", "help", "new", "stop", "unsupported", "commission", "confirm_commission", "cancel_commission", "stop_commission", "resume_commission"].includes(command as null | string)) {
     throw new EffectRuntimeRequestError("unsupported external conversation command");
   }
@@ -273,6 +277,11 @@ export function planBoundConversationRequest(params: JsonObject): JsonObject {
   const target = row.target_recorded === true ? row : current;
   const session = target?.session_id ?? null;
   const turn = row.target_recorded === true ? row.turn_id ?? null : current?.active_turn_id ?? null;
+  if (Number(imageCount) > 0 && (command !== null || params.agent_target != null)) {
+    // Preserve the existing attached-host capability boundary and never drop
+    // images while executing a control command or handing off to that host.
+    return {operation: "reply", session_id: session, turn_id: null, response_code: "unsupported_attachment"};
+  }
   if (["agents", "select_agent", "select_project"].includes(String(command))) {
     return {operation: "select_recipient", session_id: null, turn_id: null};
   }

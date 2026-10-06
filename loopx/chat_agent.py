@@ -144,6 +144,10 @@ def _terminal_turn_error(error: Any, fallback: str) -> CodexChatAgentError:
             "rate_limit_exceeded",
             "Codex 上游请求频率受限，本轮未完成。",
         ),
+        "serverOverloaded": (
+            "server_overloaded",
+            "当前模型繁忙，本轮未完成。",
+        ),
         "contextWindowExceeded": (
             "context_window_exceeded",
             "Codex 上下文超过限制，本轮未完成。",
@@ -169,6 +173,8 @@ def _terminal_turn_error(error: Any, fallback: str) -> CodexChatAgentError:
             "next_action": (
                 "本轮已终止，不会自动重放；请查看上游说明。"
                 if policy
+                else "请先核对已有结果，再决定是否稍后重试；本次请求不会自动重放。"
+                if code == "server_overloaded"
                 else "请处理对应的上游限制后再继续。"
             ),
         },
@@ -327,6 +333,16 @@ def _turn_prompt(
     runtime_profile: str = "restricted",
     project_work: bool = False,
 ) -> str:
+    try:
+        supplied = json.loads(context_summary)
+        choices = supplied.get("context_execution") if isinstance(supplied, dict) else None
+    except (ValueError, TypeError):
+        choices = None
+    execution_guidance = (
+        "When context_execution.bindings supplies an exact existing Todo binding for the requested work, read that Todo and select its binding_id as context_handoff.execution_binding_id to submit governed execution. "
+        "Only select an explicitly cataloged binding that covers this request; registration and context delivery do not authorize execution. For consultation or unrelated/missing task bindings omit execution_binding_id. Never create a hidden Todo, change host settings or reuse a completed/stopped task to obtain launch. "
+        if isinstance(choices, dict) and choices.get("bindings") else ""
+    )
     envelope = {
         "schema_version": CHAT_AGENT_RESPONSE_SCHEMA_VERSION,
         "message": "Complete answer for the operator, at the depth this task needs.",
@@ -404,6 +420,8 @@ def _turn_prompt(
         "A continuation, correction or status question belongs to the established Goal/owner. Preserve its constraints; do not restart, create a duplicate Goal or ask for permission already granted. "
         "For requested work, inspect the supplied Goal directory and relevant work/Agent evidence (using the declared read tool when incomplete). An empty delivery-grant list does not prove there is no existing work. "
         "Use context_handoff for a uniquely relevant, active and currently granted existing owner when the user asks for that work, even without the word delegate. "
+        + execution_guidance
+        +
         "A correction to requested work is authorized context for its existing owner: send the corrected constraints in context_handoff, proposals=[], without asking to approve a Todo edit. Only direct control-plane record/configuration edits use that separate preview path. "
         "Do not redirect a Goal Chat back to its own owner: handle its follow-up in the current conversation. Registration alone is not delivery authority or execution readiness. "
         "Compare ALL plausible existing work items before selecting. A Goal ID, row order, or word overlap is not evidence of user intent. If two active items cover the requested subject and history does not distinguish them, context_handoff MUST be null; ask which in message, with goal_draft=null. "

@@ -117,8 +117,11 @@ def _apply_selected_todo_guards(
             )
             route = _resolve_quota_should_run_route(prepared)
     workspace_guard = None
+    # A compact legacy projection may legitimately omit every boundary field.
+    # Observe the selected workspace without inventing a write grant.
+    goal_boundary = prepared.goal_boundary or {}
     local_workspace = observe_goal_local_workspace(
-        prepared.item, selected_todo, prepared.goal_boundary.get("write_scope", [])
+        prepared.item, selected_todo, goal_boundary.get("write_scope", [])
     )
     if not prepared.inbox_priority_due:
         workspace_guard = build_agent_workspace_guard(
@@ -130,8 +133,8 @@ def _apply_selected_todo_guards(
             local_workspace=local_workspace,
         )
     boundary_projection_repair = build_boundary_projection_repair_hint(
-        {**prepared.goal_boundary, "write_scope": [
-            *prepared.goal_boundary.get("write_scope", []),
+        {**goal_boundary, "write_scope": [
+            *goal_boundary.get("write_scope", []),
             *local_workspace.get("allowed_write_scopes", []),
         ]},
         prepared.agent_todo_summary,

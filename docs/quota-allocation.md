@@ -144,6 +144,36 @@ window of 20 material run records and long-open-Todo-chain triggers also retain
 their existing thresholds. Quiet or unchanged Monitor polls do not consume the
 periodic material-run window; their dedicated Monitor replan thresholds still apply.
 
+### Effective-work-Turn review cadence
+
+An explicit `execution_profile.replan_after_effective_turns` selects receipt-backed
+periodic review while a Todo may remain open. The setting replaces that Goal's
+completed-Todo cadence; the legacy default remains unchanged. Both units currently
+accept 1–5, keeping this opt-in within the existing cadence configuration range.
+
+```bash
+loopx configure-goal --goal-id example --execution-replan-after-turns 3
+loopx configure-goal --goal-id example --execution-replan-after-turns 3 --execute
+loopx configure-goal --goal-id example
+loopx configure-goal --goal-id example --clear-execution-replan-after-turns --execute
+```
+
+The shared TypeScript history owner counts distinct, settled work Turns for the
+selected Agent after its latest accepted replan acknowledgement. An accepted
+negative work result can count; a poll, duplicate retry, unspent writeback or
+missing settlement receipt cannot. Reaching the threshold creates a periodic
+review obligation through the existing quota/writeback path. This does not
+schedule a host Turn or grant execution, quota or write authority.
+
+In the Capability Center, **Goal review cadence** offers the counting unit and
+quantity for either the device default or selected Goal. The versioned machine
+configuration `todo_replan_cadence_machine_defaults_v1` stores `count_unit`
+(`completed_todos` or `effective_turns`) and `count`. Existing v0 configuration
+retains its completed-Todo meaning and storage on read; applying the guided
+editor explicitly migrates its shape. Legacy Goal API input `completed_todos`
+remains accepted. Clearing a Goal override restores the current device default;
+removing that namespace restores the legacy capability default.
+
 ### Governed Turn Execution
 
 `loopx turn plan` / `loopx turn run-once` is a separate execution surface from
