@@ -81,6 +81,21 @@ if the broker dies. Its session database is isolated from other CLI/Desktop
 sessions. A lost start receipt can be recovered only from a durable admitted
 intent with the same canonical objective hash.
 
+### Goal controls
+
+These illustrations use synthetic UI fixtures. They show the controls and
+unavailable states, not real execution or billing evidence.
+
+When quota denies continuation, the panel shows a paused target and disables
+start/resume while retaining stop and status readback:
+
+![Synthetic desktop quota denial](images/native-quota-desktop.png)
+
+On mobile, a native execution failure stays visible alongside status readback.
+A disconnected observation remains unknown; refresh before retrying:
+
+![Synthetic mobile native execution error](images/native-error-mobile.png)
+
 ### Quota and authority boundary
 
 Start and resume call Core `quota should-run`. During execution, serial checks
