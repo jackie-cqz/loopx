@@ -152,11 +152,8 @@ def test_agent_type_catalog_and_scheduler_binding() -> None:
     }
 
 
-def test_activation_uses_skill_facade_loop_without_claiming_unintegrated_native_binding() -> None:
-    """ZCode integrates via the skill facade while native Goal Mode and
-    Automations bindings are not yet connected. The packet must accurately
-    describe the quota-gated agent turn loop without claiming unintegrated
-    native bindings."""
+def test_activation_keeps_skill_facade_default_and_exposes_explicit_native_opt_in() -> None:
+    """The existing skill loop stays default; a separate native CLI binding is opt-in."""
     packet = build_host_loop_activation_packet(
         agent_type=HOST_SURFACE,
         goal_id="surface-goal",
@@ -168,10 +165,18 @@ def test_activation_uses_skill_facade_loop_without_claiming_unintegrated_native_
     assert packet["host_mutation"]["host_loop_primitive"] is None
     assert packet["host_mutation"]["loop_driver"] == "agent_cli_turn_loop"
     assert (
-        "LoopX is currently integrated with ZCode via skill facade"
+        "The default ZCode entry remains the LoopX skill facade"
         in packet["host_mutation"]["missing_host_tool_gate"]
     )
     assert packet["setup_command"] == _surface_install_command(HOST_SURFACE, "loopx", ".")
     assert "quota should-run" in " ".join(packet["activation_steps"])
     assert "quota should-run" in _start_instruction(HOST_SURFACE)
     assert packet["entry_command_hint"] == "the LoopX skill installed in ZCODE_HOME/skills"
+
+    native = packet["native_goal_provider"]
+    assert native["default_off"] is True
+    assert native["execution_mode"] == "managed_runtime"
+    assert native["requires_explicit_host_selection"] is True
+    assert set(native["commands"]) == {"bind", "start", "pause", "resume", "stop", "status"}
+    assert "zcode-goal bind --goal-id surface-goal --agent-id probe-agent" in native["commands"]["bind"]
+    assert "no per-model-call token limit" in native["quota_boundary"]

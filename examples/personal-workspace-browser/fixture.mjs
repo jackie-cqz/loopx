@@ -546,6 +546,9 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
       });
     }
     for (const fixtureGoal of fixture.run_history.goals) {
+      if (state.registeredAgentsByGoal?.[fixtureGoal.id]) {
+        fixtureGoal.coordination = {...fixtureGoal.coordination, registered_agents: state.registeredAgentsByGoal[fixtureGoal.id]};
+      }
       if (state.goalSubagentConfigurationEnabled) {
         fixtureGoal.spawn_policy = projectedSubagentConfiguration(fixtureGoal.id, fixtureGoal.spawn_policy);
       } else {

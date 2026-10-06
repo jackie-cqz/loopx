@@ -233,7 +233,8 @@ def test_cli_desktop_and_source_bundle_versions_are_independent(monkeypatch, tmp
     markdown = "\n".join(diagnostics.render_zcode_diagnostics_markdown(payload))
     assert "Desktop bundled CLI:" in markdown
     assert "Source built CLI:" in markdown
-    assert "native Goal Mode and Automations are not integrated" in markdown
+    assert "managed native CLI Goal requires explicit zcode-goal bind" in markdown
+    assert "Desktop attachment and Automations are not integrated" in markdown
 
 
 
