@@ -180,3 +180,26 @@ def test_activation_keeps_skill_facade_default_and_exposes_explicit_native_opt_i
     assert set(native["commands"]) == {"bind", "start", "pause", "resume", "stop", "status"}
     assert "zcode-goal bind --goal-id surface-goal --agent-id probe-agent" in native["commands"]["bind"]
     assert "no per-model-call token limit" in native["quota_boundary"]
+
+
+@pytest.mark.parametrize("agent_id", [None, "unregistered-agent"])
+def test_legacy_skill_activation_does_not_advertise_an_unregistered_native_actor(agent_id: str | None) -> None:
+    packet = build_host_loop_activation_packet(
+        agent_type=HOST_SURFACE, goal_id="surface-goal", agent_id=agent_id,
+        registered_agents=[],
+    )
+    assert packet["activation_allowed"] is True
+    assert packet["activation_state"] == "legacy_unscoped"
+    assert packet["commands"]["heartbeat_prompt_json"]
+    assert packet["activation_method"] == "run_agent_cli_loop_gated_by_quota"
+    assert packet["native_goal_provider"]["commands"] == {}
+
+
+def test_native_activation_uses_the_existing_normalized_actor_selection() -> None:
+    packet = build_host_loop_activation_packet(
+        agent_type=HOST_SURFACE, goal_id="surface-goal",
+        registered_agents=[" probe-agent ", "probe-agent"],
+    )
+    assert packet["agent_id"] == "probe-agent"
+    assert packet["identity_contract"]["registered_agents"] == ["probe-agent"]
+    assert "--agent-id probe-agent" in packet["native_goal_provider"]["commands"]["bind"]

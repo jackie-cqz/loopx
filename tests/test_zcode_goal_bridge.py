@@ -213,6 +213,29 @@ def test_api_rejects_outside_authority_before_provider(authority, monkeypatch, c
     assert handler.sent[0][1]["status"] in {400, 403}
 
 
+@pytest.mark.parametrize("injected", [
+    {"project_ref": "ordinary-project-ref"},
+    {"project_context": {"kind": "project_workspace", "grant": "workspace_read"}},
+    {"conversation_binding_id": "ordinary-conversation-binding"},
+    {"source_context": {"source_ref": "a" * 24, "sender_ref": "b" * 24, "private_human_message": True}},
+])
+def test_api_cannot_borrow_ordinary_project_chat_authority(authority, monkeypatch, injected):
+    registry, _, _ = authority
+    handler = Handler(registry, body={
+        "action": "start",
+        "expected_binding": {
+            "goal_ref": {"goal_id": "delivery", "goal_instance_id": INSTANCE_A},
+            "goal_creation_operation_id": None,
+        },
+        **injected,
+    })
+    monkeypatch.setattr(bridge, "_node_command", lambda: pytest.fail("ordinary Chat authority reached native Node discovery"))
+    monkeypatch.setattr(bridge, "_run_json", lambda *args, **kwargs: pytest.fail("ordinary Chat authority reached native effects"))
+    assert handler._dispatch_zcode_goal(handler.path, apply=True)
+    assert handler.sent[0][1]["status"] == 400
+    assert "ZCode Goal accepts" in handler.sent[0][0]["error"]
+
+
 def test_api_get_and_post_share_canonical_bridge(authority, monkeypatch):
     from loopx.zcode_goal_mode import api
     registry, _, _ = authority

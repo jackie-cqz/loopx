@@ -1301,7 +1301,8 @@ def build_host_loop_activation_packet(
         surface = zcode_activation(commands, cli_bin)
         surface["native_goal_provider"] = native_goal_activation(
             cli_bin=cli_bin, runtime_root=runtime_root, goal_id=goal_id,
-            agent_id=selected_agent_id, activation_allowed=activation_allowed,
+            agent_id=selected_agent_id,
+            activation_allowed=activation_allowed and selected_agent_id in identity["registered_agents"],
         )
     elif canonical == "agy":
         surface = agy_cli_activation(commands, cli_bin)
