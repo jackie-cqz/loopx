@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 import shlex
 
+from .zcode_goal_mode import native_goal_activation
 from .agent_registry import normalize_registered_agents
 from .agy_goal_mode import AGY_ACCEPTED_INPUTS
 from .control_plane.scheduler.execution_context import SchedulerRuntimeProfile
@@ -1298,6 +1299,10 @@ def build_host_loop_activation_packet(
         surface = cursor_agent_activation(commands, cli_bin)
     elif canonical == "zcode":
         surface = zcode_activation(commands, cli_bin)
+        surface["native_goal_provider"] = native_goal_activation(
+            cli_bin=cli_bin, runtime_root=runtime_root, goal_id=goal_id,
+            agent_id=selected_agent_id, activation_allowed=activation_allowed,
+        )
     elif canonical == "agy":
         surface = agy_cli_activation(commands, cli_bin)
     elif canonical == "kiro-cli":

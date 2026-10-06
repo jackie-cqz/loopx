@@ -1083,6 +1083,7 @@ function buildPersonalHomeModel(
       agentId: agentRow?.agentId ?? registeredAgentIds[0] ?? "codex",
       agentLaneCount: goalAgentLanes.length,
       agentLanes: goalAgentLanes,
+      registeredAgentIds,
       agentLabel: agentRow?.agentId,
       agentSentence: personalAgentSentence(payload, row, state, t),
       agentTodos: [...goalAgentTodos, ...agentTodoFacts.recentCompleted],

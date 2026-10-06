@@ -136,9 +136,10 @@ def zcode_activation(commands: dict[str, str], cli_bin: str) -> dict[str, Any]:
         skills_root=ZCODE_SKILLS_ROOT_LABEL,
         extra_host_mutation={
             "missing_host_tool_gate": (
-                "LoopX is currently integrated with ZCode via skill facade and "
-                "has no direct machine binding for ZCode native Goal Mode or "
-                "Automations. If the session cannot keep entering through quota "
+                "The default ZCode entry remains the LoopX skill facade. Explicit "
+                "zcode-goal bind selects a separate managed native CLI session; "
+                "it does not attach this conversation or enable Automations. "
+                "If the skill session cannot keep entering through quota "
                 "should-run, show the exact heartbeat-prompt command for the user "
                 "to run and do not claim autonomous heartbeat support."
             ),

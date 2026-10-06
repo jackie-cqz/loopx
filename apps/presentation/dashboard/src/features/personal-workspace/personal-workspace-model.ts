@@ -158,6 +158,8 @@ export type WorkspaceGoal = {
     lastActivityAt?: string | null;
     state?: string | null;
   }>;
+  /** Canonical registered identities; discovered task claimants do not grant binding authority. */
+  registeredAgentIds?: string[];
   agentLaneCount?: number;
   agentLabel?: string;
   agentSentence: string;

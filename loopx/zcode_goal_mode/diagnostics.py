@@ -320,7 +320,7 @@ def collect_zcode_host_diagnostics(
         "cli": _inspect_cli(resolved_cli, discovery="explicit" if explicit_cli else "PATH"),
         "desktop": _inspect_desktop(desktop_path),
         "source_checkout": _inspect_source(source_root),
-        "loopx_binding": {"mode": "skill_facade", "native_goal": "not_integrated", "automations": "not_integrated"},
+        "loopx_binding": {"mode": "skill_facade", "native_goal": "opt_in_managed_cli", "automations": "not_integrated"},
         "probe_boundary": "Isolated help/version only. No Desktop launch, session, model, app-server handshake or credential read. Interface observations do not certify runtime readiness.",
     }
 
@@ -345,5 +345,5 @@ def render_zcode_diagnostics_markdown(payload: dict[str, Any]) -> list[str]:
             lines.append(f"  Interface observations: {interfaces}.")
         if host.get("next_action"):
             lines.append(f"  {host['next_action']}")
-    lines.extend(["", payload["probe_boundary"], "LoopX binding: Skill facade; native Goal Mode and Automations are not integrated."])
+    lines.extend(["", payload["probe_boundary"], "LoopX binding: Skill facade by default; managed native CLI Goal requires explicit zcode-goal bind. Desktop attachment and Automations are not integrated."])
     return lines

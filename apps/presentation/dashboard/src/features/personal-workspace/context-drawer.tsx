@@ -1,3 +1,4 @@
+import { ZCodeGoalControl } from "./zcode-goal-control";
 import { GoalAcceptanceObservationCard } from "./goal-acceptance-observation-card";
 import { AttentionDetailCard } from "./attention-detail-card";
 import type {DecisionOutcome} from "../../../../../../loopx/control_plane/todos/user_completion_types.js";
@@ -831,6 +832,7 @@ export function ContextDrawer({ agents, attentionHistory = [], onSelectAttention
                 </>
               )}
             </section>
+            <ZCodeGoalControl key={selection.item.goalId} goal={selection.item} readOnly={readOnly} />
             {!readOnly ? <div className="personal-drawer-action-grid">
               <button className="personal-secondary-action" onClick={() => callbacks.onRequestScheduleConfig?.("heartbeat", selection.item.goalId)} type="button"><Radio size={16} />{t("drawer.setupHeartbeat")}</button>
               <button className="personal-secondary-action" onClick={() => callbacks.onRequestScheduleConfig?.("monitor", selection.item.goalId)} type="button"><CalendarClock size={16} />{t("drawer.scheduleAdd")}</button>
