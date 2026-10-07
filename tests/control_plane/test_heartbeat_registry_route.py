@@ -120,7 +120,12 @@ def test_cli_generated_guard_selection_and_settlement_ignore_conflicting_cwd_reg
     code, guard = _execute(shlex.split(selection.replace("{todo_id}", cli.TODO_ID))[1:], project)
     assert code == 0, guard
     assert guard["selected_todo"]["todo_id"] == cli.TODO_ID
-    assert any(read["kind"] == "agent_preferences" for read in guard["required_reads"])
+    work_context = guard["interaction_contract"]["agent_channel"]["work_context"]
+    preference = next(source for source in work_context["sources"]
+                      if source.get("kind") == "agent_preferences")
+    assert preference["content"]["current"]["items"][0]["statement"] == "Use the designated reviewer."
+    assert not any(read.get("kind") == "agent_preferences"
+                   for read in guard["interaction_contract"]["agent_channel"]["required_reads"])
     identity = guard["heartbeat_receipt"]["settlement_identity"]
     # A later no-argument reentry must retain the original choice and authority.
     code, guard = _execute(guard_argv, project)

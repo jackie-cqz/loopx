@@ -238,6 +238,25 @@ No copying host conversations, cross-home rebinding or implicit global corpus.
 Moving the Goal state file requires an explicit context migration; it is not
 silently treated as the same private scope.
 
+### Fresh Turn context without a separate preference read
+
+Ordinary quota guards and TurnEnvelope now observe the exact Agent preference
+scope even when no store exists. `work_context.observations` carries a fresh
+`empty` hook observation: clear cached preference context and do not probe the
+same empty source again. Missing observations mean unknown, not empty. A known
+filesystem permission denial and other source failures remain unavailable
+context, with the existing dependent-action hold and independent-work policy.
+This changes the default empty-source projection; it grants no work authority.
+
+Each guard rereads the source without a negative cache. Newly written preferences,
+corrections, retirements and expiry therefore appear in the next guard. A single
+capability-owned snapshot supplies both discovery and current bodies, avoiding
+an additional provider read after discovery. Read delivered current bodies once
+for this guard's pre-work checks; execute only remaining `required_reads` at that
+stage. Before every preference-dependent external action, obtain a fresh scoped
+view through a new guard or explicit `agent read`, even if an earlier view was
+empty or already consumed. The explicit read also precedes durable corrections.
+
 ### Memory service providers and the next integration boundary
 
 The extension boundary is a **memory service**, not just a File/SQLite driver.
@@ -341,17 +360,14 @@ a newly fetched revision, which would hide a concurrent correction.
 
 ### Fresh-turn adoption
 
-After any preference has been committed, CLI quota admission and native Turn
-planning/execution disclose a required owner-local read through the existing
-turn-start hook. Every required read and its exact executable command survive
+CLI quota and native Turn share the
+[fresh scoped context contract](#fresh-turn-context-without-a-separate-preference-read)
+above. Native hosts consume delivered current bodies and execute remaining
+required reads. Every remaining read and its exact executable command survive
 Turn compaction, including long quoted paths and more than five hooks; size
-excess remains a diagnostic rather than permission to drop obligations.
-Counts and the read command enter the turn envelope; private
-statements and source quotes do not enter generic quota/status or public sinks.
-Discovery uses a content-free TS observation of the exact Goal/Agent scope.
-A missing store leaves the entire hook projection unchanged even when another
-Goal or Agent has preferences in the same runtime. Retired/expired records still
-require a fresh read; an unreadable store is unavailable, never absence.
+excess does not authorize dropping obligations. Scoped quota/Turn `work_context`
+may carry owner-private bodies; generic status and public sinks do not receive
+private statements or source quotes.
 
 The command reads all current scoped entries, including retired/expired markers,
 instead of relying on embedding or keyword ranking to find a prohibition.
@@ -370,8 +386,7 @@ permissions, make a whole Goal unavailable, or retry failed providers in a loop.
 Do not
 act on a cached preference; independent work can continue. This is a host
 obligation, **not** a claim that a generic memory engine intercepts every tool
-call atomically. Native hosts must execute the disclosed read, and ordinary
-unmanaged conversations have no automatic hook.
+call atomically. Ordinary unmanaged conversations have no automatic hook.
 
 The bounded current view accepts at most 64 subject keys and 32 KiB of records.
 Capacity failure rejects the write; it never silently evicts an old constraint.
