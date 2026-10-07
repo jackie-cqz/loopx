@@ -794,65 +794,55 @@ change. Historical thresholds do not freeze a regression budget. This history is
 not a waived regression or a frozen SLO pass. An unchanged base failure must be
 attributed before it is distinguished from a new candidate regression.
 
-The latest matched qualification (`fc411c878` main / `80368be68` merged
-candidate) pins each probe's source with `PYTHONPATH` on one shared fixture.
-All 96 Linux character and line measurements match. Complete consumer strings
-match apart from generated clock, receipt and source-decision hash metadata;
-this is feature-off parity, not a claim of byte-identical raw output. Earlier
-direct-run receipts imported the frozen physical checkout at their run and
-qualify that source only; the current comparison uses pinned snapshots.
+The matched qualification (`82b118229` main / `399d1bdd9` merged candidate)
+retains admitted work context, exact selected Todo text and acceptance, ordered
+required reads, captured scheduler decisions and complete registry/runtime
+command routes. All 96 Linux character and line measurements match; prose and
+routed commands match after excluding generated clock and receipt metadata.
+Windows has 93 equal measurements and three bootstrap JSON rows two characters
+smaller on the candidate, with unchanged routes, shapes and action signatures.
+These are unchanged upstream presentation failures, not new candidate growth.
 
-Upstream fresh context deliberately changes the empty-store default: each guard
-observes the exact scope, delivers fresh empty hook observations and supplies
-current bodies from one snapshot. All 16 context-bearing JSON outputs have one
-body/instruction carrier. Keep all seven obligations: consume remaining reads
-before work without repeating fulfilled pre-work reads; obtain action-specific
-freshness even after an empty/current view; discard cached empty-hook content
-without another discovery read; treat missing observations as unknown; hold
-dependent actions on unavailable context; rerun the guard after source changes;
-and grant no authority from context. Raw hook diagnostics and normalized empty
-observations repeat status metadata, not bodies or another instruction.
+The complete matrix measures Windows maxima of 21,796 / 579 lines for small
+quota JSON, 35,771 / 836 for crowded quota, 45,578 / 834 for crowded diagnosis,
+14,848 / 375 for multi-Agent planning, 14,449 / 365 for transaction detail,
+13,055 / 53 for compact heartbeat and 11,381 / 279 for the multi-subagent Turn
+Envelope. Small Markdown work/read context reaches 8,434 / 134 for quota and
+3,701 / 90 for the envelope; cold quota Markdown reaches 8,508 / 134. The
+separate real-vision fixture measures 41,564 JSON characters, and crowded Turn
+planning with vision reaches 17,236. Preserve those caller clauses and routes
+rather than removing current work, acceptance or independently runnable actions.
 
-Windows exposes 18 rows above the previous ceilings. Quota JSON measures
-23,082 / 606 lines small, 37,057 / 863 crowded and 23,001 / 634 multi-Agent;
-Markdown measures 9,444 / 146, 8,508 / 96 and 7,200 / 89. Planning JSON measures
-14,620 / 365 small, 18,095 / 463 crowded and 16,138 / 405 multi-Agent; its
-separate vision fixture reaches 18,524 / 474. Transaction detail is
-15,738 / 395, multi-subagent envelope JSON 12,051 / 291, envelope Markdown
-4,711 / 102, and all six cold quota Markdown selectors 9,518 / 146. The Linux
-failures remain recorded: quota Markdown 9,414 / 146, 8,504 / 96 and
-7,200 / 89; cold selectors 9,484 / 146; envelope 4,681 / 102. Do not remove
-freshness clauses or complete registry/runtime routes to conceal these costs.
-
-Only demonstrated presentation ceilings change (characters / lines):
+Only the exceeded presentation ceilings change (characters / lines):
 
 | Surface and format | Previous ceiling | Qualified ceiling |
 | --- | --- | --- |
-| Quota JSON, small / crowded / multi-Agent | 23,000 / 620; 37,000 / 880; 23,000 / 650 | 24,000 / 620; 38,000 / 880; 24,000 / 650 |
-| Quota Markdown, small / crowded / multi-Agent | 9,000 / 150; 7,800 / 90; 7,000 / 85 | 10,000 / 150; 9,000 / 110; 7,800 / 100 |
-| Turn plan JSON, small / crowded / multi-Agent | 14,000 / 360; 18,000 / 470; 16,000 / 400 | 15,500 / 390; 19,500 / 490; 17,000 / 430 |
-| Transaction detail JSON | 15,500 / 400 | 16,500 / 400 |
-| Turn Envelope JSON / Markdown | 12,000 / 300; 4,000 / 100 | 13,000 / 300; 5,200 / 110 |
-| Six cold quota Markdown selectors | 9,000 / 150 | 10,000 / 150 |
+| Diagnosis JSON, small / crowded | 21,000 / 470; 45,000 / 850 | 22,500 / 500; 47,000 / 850 |
+| Quota JSON, small / crowded | 20,000 / 520; 35,000 / 830 | 23,000 / 620; 37,000 / 880 |
+| Quota Markdown, small / crowded / multi-Agent | 6,700 / 72; 7,800 / 78; 7,000 / 75 | 9,000 / 150; 7,800 / 90; 7,000 / 85 |
+| Turn plan JSON, small / crowded / multi-Agent | 12,000 / 320; 16,000 / 420; 12,000 / 320 | 14,000 / 360; 18,000 / 470; 16,000 / 400 |
+| Turn plan Markdown, small / multi-Agent | 300 / 12 | 650 / 12 |
+| Transaction detail JSON | 13,000 / 360 | 15,500 / 400 |
+| Compact heartbeat JSON | 13,000 / 58 | 14,000 / 58 |
+| Turn Envelope JSON / Markdown | 9,000 / 250; 650 / 20 | 12,000 / 300; 4,000 / 100 |
+| Cold quota Markdown, scheduler / other selectors | 6,700 / 72; 7,800 / 78 | 9,000 / 150 |
+| Separate real-vision quota JSON fixture | 41,000 characters | 43,000 characters |
 
-All unaffected ceilings and original per-Todo/fixed-growth and bootstrap
-repetition guards stay active. Linux quota growth is 13,847 against
-35*300 + 6,000; planning is 3,676 against 35*60 + 4,700; diagnosis is
-23,601 against 35*520 + 7,000. This is a measured presentation tradeoff with
-complete current-context semantics, not increased execution quota or permission.
+Per-Todo and fixed growth remain unchanged: quota growth is 13,847 Linux /
+13,975 Windows against 35*300 + 6,000; planning is 4,198 / 3,475 against
+35*60 + 4,700; diagnosis is 23,601 / 23,881 against 35*520 + 7,000.
+Bootstrap duplication, semantic/parity assertions and unaffected ceilings stay
+active. The production Turn Envelope's 8,192-byte performance diagnostic and
+its overflow warning remain unchanged. Linux crowded-plan, multi-Agent-plan
+and multi-subagent envelopes still measure 10,631 / 9,256 / 9,176 compact UTF-8
+bytes and report `within_budget=false` with `turn_envelope_budget_exceeded`;
+these unchanged warnings are not a green performance SLO. This diagnostic is
+never admission or execution authority. The repair grants no execution quota,
+spending or provider permissions and does not rewrite original failures as passes.
 
-The production 8,192-byte diagnostic remains a performance target, never
-admission or execution authority. Linux small/crowded/multi-Agent plan envelopes
-measure 8,706 / 11,115 / 9,740 compact UTF-8 bytes; plain envelope, transaction
-detail and multi-subagent measure 8,980 / 8,888 / 9,748. All retain
-`within_budget=false` and `turn_envelope_budget_exceeded`; blocking-user-gate
-remains within at 6,481. Small plan, plain envelope and transaction are now
-also over target compared with earlier frozen-head observations. These warnings
-are not a green performance SLO, and the old failures are not rewritten as passes.
-
-本轮用显式源码导入边界和同一负载确认最新 main/候选语义及成本一致，保留新鲜空
-上下文、动作前新鲜度、未知/不可用区分与完整命令。仅按跨平台实际超限调整展示
-预算；增长、重复度、生产性能诊断、执行配额与权限边界不变，不宣称性能目标通过。
+本轮依据相同 main/候选和完整矩阵保留当前工作、验收、必读项及完整命令路由，
+仅修正已超过的展示回归预算。时钟与生成回执元数据不作逐字节一致声明；每 Todo
+和固定增长、重复度、生产性能诊断及执行配额边界不变，原失败仍按失败记录保留。
 
 Classify the limit by its owning contract before deciding how to repair a
 failure. This applies to output size/structure and latency regression budgets;
