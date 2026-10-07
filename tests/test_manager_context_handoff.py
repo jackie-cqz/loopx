@@ -161,8 +161,10 @@ def test_stopped_goal_is_not_a_context_recipient_and_revokes_replay(fixture):
     assert authority(root, registry, session, turn)["targets"] == [
         {"goal_id": "other", "agent_id": "peer"}
     ]
-    with pytest.raises(ValueError, match="not authorized"):
+    before = {path: path.read_bytes() for path in _root(root).rglob("*.json")}
+    with pytest.raises(ValueError, match="collaboration Goal is stopped or archived"):
         deliver(root, registry, session=session, turn=turn, request=request)
+    assert before == {path: path.read_bytes() for path in _root(root).rglob("*.json")}
     assert len(pending(root, "research", "worker")["items"]) == 1
 
     data["goals"][0]["activation_state"] = "active"
@@ -183,8 +185,10 @@ def test_stopped_or_invalid_goal_is_excluded_from_lark_and_goal_chat(fixture, lo
 
     goal_session = {**session, "channel_id": "goal.research", "goal_id": "research"}
     assert authority(root, registry, goal_session, turn)["targets"] == []
-    with pytest.raises(ValueError, match="not authorized"):
+    before = {path: path.read_bytes() for path in _root(root).rglob("*.json")}
+    with pytest.raises(ValueError, match="collaboration Goal is stopped or archived"):
         deliver(root, registry, session=goal_session, turn=turn, request=request)
+    assert before == {path: path.read_bytes() for path in _root(root).rglob("*.json")}
 
     lark_session = {**session, "channel_id": "manager.external.group"}
     lark_turn = {**turn, "origin": "lark"}
@@ -200,8 +204,10 @@ def test_stopped_or_invalid_goal_is_excluded_from_lark_and_goal_chat(fixture, lo
                      message=turn["message"], source_id="lark:original")
     expected = [] if local_scope == "selected" else [{"goal_id": "other", "agent_id": "peer"}]
     assert authority(root, registry, lark_session, lark_turn)["targets"] == expected
-    with pytest.raises(ValueError, match="not authorized"):
+    before = {path: path.read_bytes() for path in _root(root).rglob("*.json")}
+    with pytest.raises(ValueError, match="collaboration Goal is stopped or archived"):
         deliver(root, registry, session=lark_session, turn=lark_turn, request=request)
+    assert before == {path: path.read_bytes() for path in _root(root).rglob("*.json")}
 
     data["goals"][0]["activation"]["state"] = "unreadable"
     registry.write_text(json.dumps(data))

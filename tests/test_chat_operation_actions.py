@@ -667,9 +667,13 @@ def test_agent_handoff_one_shot_consumption_survives_concurrent_retry_and_restar
     assert consume(99)["execution_allowed"] is False
 
 
-@pytest.mark.parametrize("change", ["expires", "rebound", "stopped", "payload"])
+@pytest.mark.parametrize(
+    "change,expected_error",
+    [("expires", ActionConflictError), ("rebound", ActionConflictError),
+     ("stopped", ValueError), ("payload", ActionConflictError)],
+)
 def test_agent_handoff_fails_closed_on_expiry_binding_activation_or_terms_drift(
-    tmp_path: Path, change: str
+    tmp_path: Path, change: str, expected_error: type[Exception],
 ) -> None:
     service, store = _service(tmp_path)
     proposal = _claim_agent_operation(service, store)
@@ -691,7 +695,8 @@ def test_agent_handoff_fails_closed_on_expiry_binding_activation_or_terms_drift(
             stored["normalized_parameters"]["payload"]["quantity"] = "2.00"
         store.path.write_text(json.dumps(data))
     before = store.path.read_bytes()
-    with pytest.raises(ActionConflictError):
+    reason = "collaboration Goal is stopped or archived" if change == "stopped" else None
+    with pytest.raises(expected_error, match=reason):
         agent_operation_action(
             store.root.parent.parent,
             service.registry_path,
@@ -963,11 +968,12 @@ def test_lifecycle_only_source_profile_cannot_acquire_new_operation_authority(
     assert (store.path.read_bytes() if store.path.exists() else None) == before
 
 
-@pytest.mark.parametrize("historical", [False, True])
+@pytest.mark.parametrize("historical,expected_error", [(False, ActionConflictError), (True, ValueError)])
 def test_replacement_session_reconciles_under_its_current_binding_without_reconsumption(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     historical: bool,
+    expected_error: type[Exception],
 ) -> None:
     from loopx.thread_agent_binding import (
         bind_thread_agent_in_registry,
@@ -1027,8 +1033,8 @@ def test_replacement_session_reconciles_under_its_current_binding_without_recons
     assert inspected["access"]["permission"] == "historical_evidence_only"
     assert inspected["outcome"] == unknown and not inspected["binding_current"]
     for attempt in ("attempt-1", "attempt-2"):
-        reason = "Goal is stopped" if historical else "original bound session"
-        with pytest.raises(ActionConflictError, match=reason):
+        reason = "collaboration Goal is stopped or archived" if historical else "original bound session"
+        with pytest.raises(expected_error, match=reason):
             agent_operation_action(
                 runtime,
                 service.registry_path,
