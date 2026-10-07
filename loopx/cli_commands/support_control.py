@@ -278,6 +278,7 @@ def handle_support_control_command(
         active_state_source = None
         registered_agents = None
         effective_agent_id = args.agent_id
+        agent_registry_path = registry_path
         requested_runtime_profile = (
             SchedulerRuntimeProfile.CODEX_APP_HEARTBEAT.value
             if args.codex_app
@@ -368,6 +369,7 @@ def handle_support_control_command(
                 thin=bool(args.thin),
                 cli_bin=args.cli_bin,
                 runtime_root=args.runtime_root,
+                registry_path=agent_registry_path.resolve(),
                 agent_id=effective_agent_id,
                 agent_scopes=args.agent_scopes,
                 agent_profile=agent_profile,
@@ -429,6 +431,7 @@ def handle_support_control_command(
                 thin=bool(args.thin),
                 cli_bin=args.cli_bin,
                 runtime_root=args.runtime_root,
+                registry_path=agent_registry_path.resolve(),
                 agent_id=effective_agent_id or args.agent_id,
                 agent_scopes=args.agent_scopes,
                 registered_agents=registered_agents,

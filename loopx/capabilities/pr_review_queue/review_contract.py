@@ -6,9 +6,10 @@ from typing import Any
 
 from .review_body import REQUIRED_FINAL_SECTIONS, review_body_requirements
 from .approval_closeout import approval_closeout_contract
+from .architecture_assessment import ARCHITECTURE_ASSESSMENT
 
 # Increment when review requirements change without changing the packet shape.
-REVIEW_POLICY_REVISION = 18
+REVIEW_POLICY_REVISION = 19
 
 # Reuse the existing evidence fields for publication, rather than inventing a
 # second problem assessment or treating a jargon denylist as comprehension.
@@ -350,7 +351,7 @@ def build_review_template(item: Mapping[str, Any]) -> dict[str, Any]:
             _section(
                 "改动思路",
                 floors["改动思路"],
-                "Use `architecture_flow`, `repository_reuse`, and `walkthroughs`: entry point, authoritative state, decision boundary, positive path, existing implementation comparison, and ownership trade-off. For introduced or newly enforced state, explain derivation versus irreducible intent and the real producer/trigger, not just its serializer.",
+                "Use `architecture_flow`, `repository_reuse`, and `walkthroughs`: entry point, authoritative state, decision boundary, positive path, existing implementation comparison, and ownership trade-off. Publish change_proportionality.architecture_assessment's decisive reason and current PR boundary: separate invariants, policies, provider IO and projections, including defaults and required-versus-observer failure semantics. For introduced or newly enforced state, explain derivation versus irreducible intent and the real producer/trigger, not just its serializer.",
             ),
             _section(
                 "具体改动",
@@ -437,7 +438,10 @@ def build_review_execution_contract(*, wait_for_ci: bool = True) -> dict[str, An
                 "Use code_volume.compatibility_assessment to challenge assumed compatibility "
                 "needs before accepting additional protocol branches. Simplification includes "
                 "deletion and consolidation, not only helper extraction. Do not impose "
-                "LoopX-specific architecture on other repositories."
+                "LoopX-specific architecture on other repositories. Use "
+                "change_proportionality.architecture_assessment to judge each mechanism's "
+                "ownership, default and failure role before accepting the bundle; then state "
+                "the selected current-PR boundary rather than merely listing alternatives."
             ),
             "falsify_claims": (
                 "Choose the strongest material promise, not the easiest failing input. "
@@ -466,7 +470,10 @@ def build_review_execution_contract(*, wait_for_ci: bool = True) -> dict[str, An
                 "smaller boundary solves the demonstrated problem; do not keep adding "
                 "machinery to satisfy each review round. Conversely, approve justified "
                 "cohesive changes: no rejection quota, line-count cutoff, author/model "
-                "reputation rule, compulsory TS rewrite, or speculative edge-case veto."
+                "reputation rule, compulsory TS rewrite, or speculative edge-case veto. "
+                "Reconcile the architecture assessment with the verdict and public explanation: "
+                "required simplification cannot disappear behind a proportionate label; "
+                "an unaccepted future preference cannot become a current blocker."
             ),
         },
         "evidence_requirements": [
@@ -1019,8 +1026,10 @@ def build_review_execution_contract(*, wait_for_ci: bool = True) -> dict[str, An
                     "repository_architecture_constraints",
                     "strongest_case_against_shipping",
                     "why_smaller_or_existing_owner_is_insufficient",
+                    "architecture_assessment",
                     "verdict",
                 ],
+                "architecture_assessment": deepcopy(ARCHITECTURE_ASSESSMENT),
                 "rule": (
                     "Judge the full exact-head change against the original "
                     "user-visible problem, not against how completely the proposed "
@@ -1036,6 +1045,9 @@ def build_review_execution_contract(*, wait_for_ci: bool = True) -> dict[str, An
                     "expanded re-review, reset this assessment from the original problem "
                     "instead of treating reviewer-requested additions as progress toward "
                     "approval."
+                    " The nested architecture assessment binds mechanism placement, default "
+                    "strategy and the useful current-PR boundary to this same verdict, "
+                    "rather than allowing them to remain disconnected commentary."
                 ),
             },
             {
@@ -1305,7 +1317,9 @@ def build_review_execution_contract(*, wait_for_ci: bool = True) -> dict[str, An
             "open_pr_unresolved_proportionality": (
                 "REQUEST_CHANGES when change_proportionality is disproportionate "
                 "or not_yet_proven; correctness, green CI, and resolved earlier "
-                "findings cannot override this gate"
+                "findings cannot override this gate. Its architecture_assessment decisions "
+                "simplify_now and not_yet_proven also block even with a proportionate parent "
+                "label; a supported non-blocking follow_up still permits APPROVE."
             ),
             "open_pr_unresolved_semantic_alignment": (
                 "REQUEST_CHANGES for semantic_alignment not_yet_proven or violated: "

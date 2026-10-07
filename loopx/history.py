@@ -152,6 +152,27 @@ def reserve_unique_run_paths(runs_dir: Path, generated_at: str) -> tuple[Path, P
     return reserve_run_artifact_paths(runs_dir, run_file_stem(generated_at))
 
 
+def append_run_index_record(
+    index_path: Path,
+    record: dict[str, Any],
+    *,
+    allow_nan: bool = True,
+) -> None:
+    """Append one readable JSONL record after any unterminated final row."""
+
+    encoded = (
+        json.dumps(record, ensure_ascii=False, allow_nan=allow_nan).encode("utf-8")
+        + b"\n"
+    )
+    with index_path.open("a+b") as handle:
+        handle.seek(0, 2)
+        if handle.tell() > 0:
+            handle.seek(-1, 2)
+            if handle.read(1) != b"\n":
+                handle.write(b"\n")
+        handle.write(encoded)
+
+
 def write_reserved_run_artifacts(
     *,
     runs_dir: Path,
@@ -189,8 +210,7 @@ def write_reserved_run_artifacts(
             encoding="utf-8",
         )
         markdown_path.write_text(render_markdown(payload) + "\n", encoding="utf-8")
-        with index_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(index_record, ensure_ascii=False, allow_nan=False) + "\n")
+        append_run_index_record(index_path, index_record, allow_nan=False)
 
 
 def validate_goal_id_path_segment(goal_id: str) -> str:

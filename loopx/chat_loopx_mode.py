@@ -16,6 +16,9 @@ from typing import Any, Callable
 
 from .agent_registry import load_goal_from_registry, registered_agent_ids_for_goal
 from .chat_codex_goal import CodexGoalDriver, validate_goal_chat
+from .control_plane.collaboration.goal_instance_scope import (
+    goal_accepts_collaboration,
+)
 from .control_plane.effect_runtime import effect_runtime_result
 from .control_plane.collaboration.inbox import _read, _root
 from .file_lock import exclusive_file_lock, LockAcquisitionPolicy, LockAcquireTimeoutError
@@ -420,7 +423,7 @@ class ChatLoopXMode:
                     "settings": settings,
                     "native": session.get("native_goal") or {},
                     "registered_agents": registered_agent_ids_for_goal(goal),
-                    "goal_active": goal.get("status") not in {"stopped", "archived"},
+                    "goal_active": goal_accepts_collaboration(goal),
                     "execution_binding_valid": True,
                 },
             )
@@ -546,7 +549,7 @@ class ChatLoopXMode:
                 "native": session.get("native_goal") or {},
                 "registered_agents": registered_agent_ids_for_goal(goal) if goal else [],
                 "goal_active": goal is not None
-                and goal.get("status") not in {"stopped", "archived"},
+                and goal_accepts_collaboration(goal),
                 "execution_binding_valid": binding_valid,
             },
         )

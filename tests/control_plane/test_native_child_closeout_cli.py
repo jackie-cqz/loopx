@@ -12,8 +12,9 @@ from test_native_child_replan_guard_cli import AGENT, GOAL, ROOT, TODO, TURN, _a
 
 
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
+@pytest.mark.parametrize("result_outcome", ["completed", "failed", "cancelled"])
 def test_closed_replan_only_accepts_existing_native_operations(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str, result_outcome: str,
 ) -> None:
     call, runtime, index = _fixture(tmp_path, monkeypatch, provider, True)
     guard = _admitted_guard(call, True)
@@ -50,27 +51,42 @@ def test_closed_replan_only_accepts_existing_native_operations(
     assert pending_replay["appended"] is False
     assert pending_replay["receipt"]["event_id"] == first["receipt"]["event_id"]
     result = (*base, "record", "--operation-id", "op-original", "--stage", "result",
-              "--outcome", "completed", "--execute")
-    assert call(*result)["appended"] is True
+              "--operation", "spawn", "--entrypoint-id", "generic_host",
+              "--outcome", result_outcome, "--reason-code", "bounded_result_observed", "--execute")
+    if result_outcome == "completed":
+        assert call(*result)["appended"] is True
     spent = call("quota", "spend-slot", *binding, "--slots", "1", "--source", "heartbeat", "--execute")
     assert spent["settlement_progress"]["state"] == "settled"
     closed_index = index.read_bytes()
+    if result_outcome != "completed":
+        assert call(*result)["appended"] is True
+        reject(*base, "record", "--operation-id", "op-original", "--stage", "review",
+            "--outcome", "accepted", "--evidence-ref", "evidence-source",
+            "--validation-ref", "validation-source", "--execute", reason="completed")
     reject(*base, "record", "--operation-id", "op-new-skip", "--stage", "decision",
         "--operation", "skip", "--outcome", "skipped", "--entrypoint-id", "generic_host",
         "--reason-code", "parent_work_priority", "--execute", reason="open, work-admitted")
     reject(*base, "record", "--operation-id", "op-unknown", "--stage", "result",
         "--outcome", "completed", "--execute", reason="started")
     review = (*base, "record", "--operation-id", "op-original", "--stage", "review",
-        "--outcome", "accepted", "--evidence-ref", "evidence-source", "--validation-ref", "validation-source",
-        "--execute")
+        "--operation", "spawn", "--entrypoint-id", "generic_host", "--outcome",
+        "accepted" if result_outcome == "completed" else "rejected",
+        *(["--evidence-ref", "evidence-source", "--validation-ref", "validation-source"]
+          if result_outcome == "completed" else []), "--execute")
     accepted = call(*review)
     assert accepted["appended"] is True
     assert call(*review)["appended"] is False
     assert call(*result)["appended"] is False
     reject(*base, "record", "--operation-id", "op-original", "--stage", "result",
-        "--outcome", "failed", "--execute", reason="conflicting")
-    assert accepted["native_child_activity"]["parent_accepted_count"] == 1
+        "--outcome", "failed" if result_outcome != "failed" else "completed",
+        "--execute", reason="conflicting")
+    assert accepted["native_child_activity"]["parent_accepted_count"] == (result_outcome == "completed")
     assert accepted["native_child_activity"]["quota_spend_slots"] == 0
+    cold = call(*base, "read")["native_child_activity"]
+    assert cold == accepted["native_child_activity"]
+    context = call("agent-context", "--goal-id", GOAL, "--agent-id", AGENT,
+                   "--phase", "after_delegate_result", "--turn-instance-id", TURN)
+    assert context["native_child_activity"] == cold
     assert index.read_bytes() == closed_index
     rows = [json.loads(line) for line in index.read_text().splitlines()]
     assert sum(row.get("classification") == "quota_slot_spent" for row in rows) == 1

@@ -44,6 +44,23 @@ owner、持久兼容义务、正反例证据及回退方式，和不可变基线
 内部删除必要但不充分，不能忽略公开 CLI/import 和序列化契约。保留公共行为测试，
 只删没有消费者的旧实现专属 characterization。删的是代码，不是用户状态、回执和备份。
 
+### 永久文档 IO 解耦
+
+原 `todos/active_state_editing.py` 的三个持久化文本函数原样移入
+`runtime/document_io.py`。这保留 Python Host IO，不新增语义 owner，也不计入
+Python 退役收益。调用方清单如下：
+
+| 调用家族 | 保留义务 |
+| --- | --- |
+| Canonical Todo 投影、completion validation store、team plan | 完整文档／声明落盘、排他重建和持久化重试；权威决策仍由 typed owner 负责 |
+| Project registry、source-session registration／registry／Turn effects、supervisor 日志 | 原身份／重试契约下的原子发布及文件／目录持久化 |
+| Bootstrap、runtime shadow writer、feedback、旧状态迁移 | 现有源／叙述写入和升级恢复；受支持的源 writer 仍可达 |
+
+故障注入转向新 owner，包括嵌入的真实恢复 probe。真实 File／SQLite 投影／重放
+和源 writer 测试继续保留权威、崩溃和副作用不重复的断言。删除三个旧定义不删除
+编辑模块仍活跃的读取／编辑函数。回退本包只改变代码归属，无需数据转换。
+最后源 writer／outbox 退出、安装采用、D2 和发布默认资格仍分别验收。
+
 ### 已合入的 T4 切片：已无调用方的 Python lease／handoff facade
 
 在 `e240730ec` 核对调用方后，#5395 已于 `8474c8d86` 合入，退役了下列
@@ -56,9 +73,15 @@ owner、持久兼容义务、正反例证据及回退方式，和不可变基线
 | `task_lease.acquire.decide`、`task_lease.lifecycle.decide`、`coordination.handoff_mode.plan` RPC 注册 | 只剩这些旧 facade／handler 测试；原生事务直接复用同一 TS 规则 | 废弃私有 RPC 明确拒绝；保留仍有 Python 调用方的 `task_lease.owner_eligibility` 和 write-scope overlap。 |
 | `local_snapshot.py` 中仅供 lease 的规范化和错误投影 | 已无调用方；原生执行器拥有 lease 事实与错误 | 保留真实 Todo mutation authorization 使用的 `todo_snapshot_from_mapping`；不删 store、回执、备份或迁移 reader。 |
 
-`authority_core.py` 仍是活跃 Todo bridge。`LeaseAction`、`LeaseModeGateCommand`
-也保留：semantic-vocabulary 注册表明确将该输入契约保留到 M4 评审。本切片不通过
-降低语义覆盖下限丢弃已有兼容义务。仅服务旧 facade 的测试随实现退役，公共／原生
+`authority_core.py` 仍是活跃 Todo bridge；#5395 当时将
+`LeaseAction`／`LeaseModeGateCommand` 保留到 M4 评审。有界 M4 包现退役无人
+使用的私有输入及其 union，加入定义／import 回生守卫，明确内部 import 不兼容。
+有价值的原生 lifecycle 子集证明改为引用实际 TS request owner；26／51／9
+覆盖下限及其他预算保持。安装态 File／SQLite lease／恢复测试在旧接口真正
+不存在时执行。回退旧代码包即可恢复私有 import，无需状态转换。公共 lease
+事务、source writer／outbox、legacy 策略、历史备份／格式／回执 reader 和永久
+Host IO 保留。这是最后调用方切片，不代表整项 C1／M4、D2 或发布默认资格完成。
+仅服务旧 facade 的测试随实现退役，公共／原生
 行为测试保留。回退该切片可恢复内部跨界，无需转换数据。本机 CLI 已采用
 `db3672f3c`，验证了干净源码清单、具备资格的 SQLite runtime、已知权威格式均为
 当前版本及健康的 canonical 合同读回。这不证明所有已安装 Host 或 D2 已验收。

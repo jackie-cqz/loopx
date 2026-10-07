@@ -437,6 +437,15 @@ def _emit_quota_result(
     print_payload: PrintPayload,
 ) -> int:
     """Capture the full decision before projecting and printing the CLI view."""
+    # Compose optional capability guidance after recovery has chosen the plan,
+    # before capture/compaction. The quota decision owner stays capability-neutral.
+    from ..capabilities.explore.turn_context import project_settlement_attachment
+
+    cli = (payload.get("interaction_contract") or {}).get("cli_channel")
+    if isinstance(cli, dict) and isinstance(cli.get("settlement_plan"), Mapping):
+        cli["settlement_plan"] = project_settlement_attachment(
+            cli["settlement_plan"], registry_path=registry_path,
+        )
     if context is not None:
         observe_quota_result(
             args, payload, registry_path=registry_path, runtime_root=context.runtime_root,

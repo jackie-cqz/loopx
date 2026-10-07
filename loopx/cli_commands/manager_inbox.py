@@ -10,6 +10,7 @@ from ..capabilities.manager_context import (
     configure_evidence_scope,
 )
 from ..control_plane.projects.registry_codec import load_project_registry
+from ..presentation.answer_instruction import collaboration_answer_instruction
 
 
 def register_manager_inbox(subparsers, add_format):
@@ -187,6 +188,7 @@ def handle_manager_inbox(args, registry_path, runtime_root):
             from ..control_plane.collaboration.peers import read_inbox
             result = read_inbox(runtime_root, registry_path, args.goal_id, args.agent_id,
                                 workspace=Path.cwd(), cursor=cursor, operation_cursor=operation_cursor)
+            result["instruction"] += " " + collaboration_answer_instruction()
             result["followthrough"] += (
                 " CLI: record assessment with manager-inbox acknowledge; optionally associate existing work "
                 "with manager-inbox link. Return audience-ready results with manager-inbox report "

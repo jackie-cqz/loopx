@@ -9,7 +9,7 @@ import pytest
 from loopx.chat_loopx_mode import TOOL
 from loopx.chat_runtime import ChatRuntimeController
 from loopx.chat_store import ChatSessionStore
-from loopx.control_plane.effect_runtime import effect_runtime_result
+from loopx.control_plane.effect_runtime import EffectRuntimeRejected, effect_runtime_result
 from test_chat_project_coordination import project  # noqa: F401
 
 
@@ -147,6 +147,26 @@ def test_goal_registry_is_the_execution_config_owner(mode):
                 "execution_config": ".loopx/config/other.json",
             },
         )
+
+
+def test_canonical_stopped_goal_rejects_start_before_turn_creation(mode):
+    service, _, _, settings, calls = mode
+    registry = service.controller.registry_path
+    payload = json.loads(registry.read_text())
+    goal = next(item for item in payload["goals"] if item["id"] == "research")
+    goal.pop("status", None)
+    goal["activation"] = {
+        "schema_version": "loopx_goal_activation_v1",
+        "state": "stopped",
+        "updated_at": "2026-10-06T00:00:00Z",
+        "reason": "Owner stopped the Goal.",
+    }
+    registry.write_text(json.dumps(payload))
+
+    with pytest.raises(EffectRuntimeRejected, match="stopped"):
+        apply(mode, "start", settings=settings)
+
+    assert calls == []
 
 
 def test_unfinished_legacy_session_can_resume_until_goal_config_is_migrated(mode):

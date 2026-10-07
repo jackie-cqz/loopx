@@ -246,14 +246,18 @@ def test_promoted_add_invokes_native_create_without_markdown_state(
     tmp_path: Path,
 ) -> None:
     registry = tmp_path / "registry.json"
+    state_file = tmp_path / "ACTIVE_GOAL_STATE.md"
+    runtime_root = tmp_path / "runtime"
     registry.write_text(
         json.dumps(
             {
                 "schema_version": 1,
-                "common_runtime_root": str(tmp_path / "runtime"),
+                "common_runtime_root": str(runtime_root),
                 "goals": [
                     {
                         "id": "goal-a",
+                        "repo": str(tmp_path),
+                        "state_file": state_file.name,
                         "coordination": {"registered_agents": ["agent-a", "agent-b"]},
                     }
                 ],
@@ -261,11 +265,9 @@ def test_promoted_add_invokes_native_create_without_markdown_state(
         ),
         encoding="utf-8",
     )
+    _engage_fence(runtime_root)
+    assert not state_file.exists()
     calls: list[tuple[str, dict[str, object]]] = []
-    monkeypatch.setattr(
-        "loopx.control_plane.todos.provider_create.read_canonical_todos_if_promoted",
-        lambda **_kwargs: {"todos": []},
-    )
 
     def _create(method: str, params: dict[str, object], *, timeout: float) -> dict[str, object]:
         assert timeout > 0
@@ -298,6 +300,9 @@ def test_promoted_add_invokes_native_create_without_markdown_state(
     )
 
     assert result["added"] is True
+    assert result["decision_read_from_provider"] is True
+    assert result["legacy_fallback_used"] is False
+    assert not state_file.exists()
     assert calls[0][0] == "coordination.local_authority.todo_create"
     assert calls[0][1]["todo"]["schema_version"] == "todo_domain_record_v0"
     assert calls[0][1]["todo"]["claimed_by"] == "agent-a"
@@ -305,7 +310,7 @@ def test_promoted_add_invokes_native_create_without_markdown_state(
     assert len(calls[0][1]["todo"]["completion_validation_sha256"]) == 64
     assert "validation_command_argv" not in calls[0][1]["todo"]
     private_declaration = read_completion_validation_declaration(
-        runtime_root=tmp_path / "runtime",
+        runtime_root=runtime_root,
         goal_id="goal-a",
         todo_id=str(result["todo_id"]),
     )
@@ -318,20 +323,6 @@ def test_promoted_add_delegates_semantic_duplicate_to_typescript(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(
-        "loopx.control_plane.todos.provider_create.read_canonical_todos_if_promoted",
-        lambda **_kwargs: {
-            "todos": [
-                {
-                    "todo_id": "todo_existing",
-                    "role": "agent",
-                    "status": "open",
-                    "archive_state": "active",
-                    "text": "Already native",
-                }
-            ]
-        },
-    )
     calls: list[tuple[str, dict[str, object]]] = []
 
     def _create(method: str, params: dict[str, object], *, timeout: float) -> dict[str, object]:
@@ -351,17 +342,27 @@ def test_promoted_add_delegates_semantic_duplicate_to_typescript(
         _create,
     )
     registry = tmp_path / "registry.json"
+    state_file = tmp_path / "ACTIVE_GOAL_STATE.md"
+    runtime_root = tmp_path / "runtime"
     registry.write_text(
         json.dumps(
             {
                 "schema_version": 1,
+                "common_runtime_root": str(runtime_root),
                 "goals": [
-                    {"id": "goal-a", "coordination": {"registered_agents": ["agent-a"]}}
+                    {
+                        "id": "goal-a",
+                        "repo": str(tmp_path),
+                        "state_file": state_file.name,
+                        "coordination": {"registered_agents": ["agent-a"]},
+                    }
                 ],
             }
         ),
         encoding="utf-8",
     )
+    _engage_fence(runtime_root)
+    assert not state_file.exists()
 
     result = add_goal_todo(
         registry_path=registry,
@@ -374,6 +375,9 @@ def test_promoted_add_delegates_semantic_duplicate_to_typescript(
 
     assert result["already_exists"] is True
     assert result["todo_id"] == "todo_existing"
+    assert result["decision_read_from_provider"] is True
+    assert result["legacy_fallback_used"] is False
+    assert not state_file.exists()
     assert calls[0][0] == "coordination.local_authority.todo_create"
 
 

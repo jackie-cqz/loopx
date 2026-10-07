@@ -98,6 +98,7 @@ try {
   await recheck.click();
   await evidence.getByRole("alert").filter({hasText: "已清除上次证据"}).waitFor();
   assert.equal(await original().count(), 0);
+  assert.equal(await selectedOutput().count(), 0, "Invalid core evidence also withdraws the selected comparison");
   assert.equal(await evidence.getByText("本次验收依据", {exact: true}).count(), 0);
   await page.screenshot({path: resolve(outputDir, "team-checked-output-unavailable.png"), animations: "disabled"});
   checkUnavailable = false;
@@ -107,6 +108,13 @@ try {
   await original().waitFor();
   await evidence.getByText("本次验收依据", {exact: true}).click();
   await checkObservation.getByText(checkTime, {exact: true}).waitFor();
+  assert.equal(await selectedOutput().count(), 0, "Recovery does not silently restore a withdrawn comparison");
+  // Establish a current comparison after core recovery before testing whether
+  // a successful same-version linked check preserves that reading choice.
+  await evidence.getByRole("button", {name: /^修订依据/}).click();
+  await evidence.getByLabel("对照产物", {exact: false}).selectOption({label: "report.md"});
+  await evidence.getByRole("button", {name: "查看原文差异", exact: true}).click();
+  await selectedOutput().waitFor();
   await page.unroute("**/api/chat/sessions/*/loopx", checkedRead);
   await evidence.getByRole("button", {name: "核验关联执行", exact: true}).click();
   const verificationGap = evidence.getByText("当前读回未提供独立验收者与指定版本回执。", {exact: true});

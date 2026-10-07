@@ -23,6 +23,10 @@ from .review_body import (
     reviewer_declaration_lines,
     visible_review_text,
 )
+from .architecture_assessment import (
+    architecture_publication_errors,
+    check_architecture_assessment,
+)
 
 
 def _missing(value: object) -> bool:
@@ -470,6 +474,8 @@ def check_review_result(
                 _check_spec_basis(blockers, row.get("spec_basis"))
             if key == "code_volume":
                 _check_compatibility_assessment(blockers, row.get("compatibility_assessment"))
+            if key == "change_proportionality":
+                blockers.extend(check_architecture_assessment(row.get("architecture_assessment")))
             if key == "observable_semantics":
                 _check_scope_coverage(blockers, row.get("scope_coverage"))
             if key == "semantic_alignment":
@@ -597,6 +603,10 @@ def check_review_result(
             ):
                 errors.append("reviewer:runtime_basis_not_published")
     problem_context = evidence.get("problem_context")
+    proportionality = evidence.get("change_proportionality")
+    if isinstance(proportionality, Mapping):
+        errors.extend(architecture_publication_errors(
+            proportionality.get("architecture_assessment"), body_text))
     errors.extend(_unpublished_problem_explanation(problem_context, body_text))
     errors.extend(_unpublished_spec_references(
         problem_context.get("spec_basis") if isinstance(problem_context, Mapping) else None,

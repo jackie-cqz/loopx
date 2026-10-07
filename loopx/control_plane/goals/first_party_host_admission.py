@@ -294,6 +294,20 @@ class FirstPartyHostGoalAdmission:
             self._decision("require_current")
 
     @contextmanager
+    def current_lifetime(self, *, operation: str) -> Iterator[None]:
+        """Keep a source-session side effect inside its planned Goal lifetime."""
+
+        if not self.source_profile:
+            yield
+            return
+        with exclusive_cross_runtime_file_lock(
+            guard_path(self.registry_path, self.goal_id),
+            operation=operation,
+        ):
+            self._decision("require_current")
+            yield
+
+    @contextmanager
     def source_journal_admission(
         self,
     ) -> Iterator[dict[str, Any] | None]:

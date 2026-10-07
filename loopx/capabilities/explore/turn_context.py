@@ -1,10 +1,14 @@
 """Read adapters for Explore's typed, bounded turn context and existing hooks."""
 
+from collections.abc import Mapping
 from pathlib import Path
 import shlex
 
 from ...agent_registry import load_goal_from_registry, require_registered_agent_id
 from ...control_plane.capability_hooks import (
+    INTERACTION_PROJECTION_HOOK_RESULT_SCHEMA_VERSION,
+    InteractionProjectionHookRegistration,
+    dispatch_interaction_projection_hooks,
     TURN_START_HOOK_RESULT_SCHEMA_VERSION,
     TurnStartHookRegistration,
     dispatch_turn_start_hooks,
@@ -15,7 +19,7 @@ from ...todos import list_goal_todos
 from .result_log import (
     build_explore_result_projection,
     explore_result_log_path,
-    load_explore_result_events,
+    load_explore_result_events_strict,
 )
 from .todo_branch_plan import (
     build_explore_todo_branch_plan,
@@ -36,7 +40,9 @@ def _policy(registry_path, goal_id):
 
 
 def explore_turn_context(
-    *, registry_path: Path, runtime_root: Path, goal_id: str, agent_id: str
+    *, registry_path: Path, runtime_root: Path, goal_id: str, agent_id: str,
+    result_limit: int = 3, result_offset: int = 0,
+    result_node: str | None = None, result_revision: str | None = None,
 ):
     goal, graph, gate = _policy(registry_path, goal_id)
     require_registered_agent_id(
@@ -44,13 +50,13 @@ def explore_turn_context(
     )
     projection, plan = {}, {}
     if graph or gate["enabled"]:
-        events = load_explore_result_events(
+        events = load_explore_result_events_strict(
             explore_result_log_path(runtime_root, goal_id), goal_id=goal_id
         )
         projection = build_explore_result_projection(
             # Resolve explicit Todo links before the typed output budget is
             # applied. New unrelated findings must not hide an older refutation.
-            events, goal_id=goal_id, finding_limit=len(events) if gate["enabled"] else 3,
+            events, goal_id=goal_id, finding_limit=len(events),
             mermaid_node_limit=3,
         )
     if gate["enabled"]:
@@ -89,6 +95,10 @@ def explore_turn_context(
             "projection": projection,
             "plan": plan,
             "route": route,
+            "result_limit": result_limit,
+            "result_offset": result_offset,
+            "result_node": result_node,
+            "result_revision": result_revision,
         },
     )
 
@@ -161,3 +171,45 @@ def extend_turn_start_dispatch(
     for key in ("registered_count", "invoked_count"):
         result[key] = int(result.get(key) or 0) + int(extra.get(key) or 0)
     return result
+
+
+def project_settlement_attachment(plan, *, registry_path: Path):
+    """Compose the existing optional result option into a Todo-bound CLI plan.
+
+    Registry access and hook dispatch are adapters. The typed Explore owner
+    supplies the guidance; neither the ordinary command nor obligations change.
+    """
+    identity = plan.get("identity") or {}
+    if not identity.get("todo_id") or not identity.get("agent_id"):
+        return plan
+
+    def produce():
+        _, graph, _ = _policy(registry_path, identity["goal_id"])
+        return {
+            "schema_version": INTERACTION_PROJECTION_HOOK_RESULT_SCHEMA_VERSION,
+            "hook_id": "explore.settlement_attachment",
+            "capability_id": "explore",
+            "phase": "interaction_projection",
+            "status": "candidate" if graph else "not_applicable",
+            "projection_slot": "explore_result_attachment" if graph else None,
+            "payload": {} if graph else None,
+        }
+
+    dispatch = dispatch_interaction_projection_hooks((InteractionProjectionHookRegistration(
+        hook_id="explore.settlement_attachment", capability_id="explore",
+        projection_slots=("explore_result_attachment",),
+        requested_read_scope=("goal.explore_policy",), producer=produce,
+    ),))
+    attachment = dispatch["projections"].get("explore_result_attachment")
+    if attachment is None:
+        return ({**plan, "capability_hook_failures": dispatch["failures"]}
+                if dispatch["failures"] else plan)
+    # Only the result-aware refresh command can consume this attachment. The
+    # caller's identity, lease, validation, spend and recovery rules stay intact.
+    steps = []
+    for step in plan.get("ordered_steps", []):
+        if (isinstance(step, Mapping) and step.get("kind") == "durable_writeback"
+                and step.get("command_template")):
+            step = {**step, "optional_attachments": [attachment]}
+        steps.append(step)
+    return {**plan, "ordered_steps": steps}

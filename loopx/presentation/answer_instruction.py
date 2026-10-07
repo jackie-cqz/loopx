@@ -18,3 +18,12 @@ def conversation_answer_instruction() -> str:
         "and exact wording; do not replace a complete answer with an ID inventory or "
         "only a file path. Never include executable HTML."
     )
+
+
+def collaboration_answer_instruction() -> str:
+    """Give CLI and MCP receivers the same requester-facing answer guidance."""
+    return (
+        "Reported result text may be returned verbatim to the requester's conversation. "
+        "Compose it as their answer, not an internal work log. "
+        + conversation_answer_instruction()
+    )

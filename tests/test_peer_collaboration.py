@@ -623,6 +623,41 @@ def test_special_file_read_is_bounded_and_stopped_goal_remains_readable(scenario
         request(root, registry, "delivery", "builder", "reviewer", "stopped", brief)
 
 
+def test_canonical_stopped_goal_rejects_peer_request_before_any_write(scenario):
+    root, registry, brief, *_ = scenario
+    config = json.loads(registry.read_text())
+    goal = config["goals"][0]
+    goal.pop("status", None)
+    goal["activation"] = {
+        "schema_version": "loopx_goal_activation_v1",
+        "state": "stopped",
+        "updated_at": "2026-10-06T00:00:00Z",
+        "reason": "Owner stopped the Goal.",
+    }
+    registry.write_text(json.dumps(config))
+    state_root = root / ".local/manager-context"
+    before = {
+        path.relative_to(state_root): path.read_bytes()
+        for path in state_root.rglob("*.json")
+    }
+
+    with pytest.raises(ValueError, match="stopped"):
+        request(
+            root,
+            registry,
+            "delivery",
+            "builder",
+            "reviewer",
+            "canonical-stopped",
+            brief,
+        )
+
+    assert {
+        path.relative_to(state_root): path.read_bytes()
+        for path in state_root.rglob("*.json")
+    } == before
+
+
 def test_nested_coordinators_return_to_each_immediate_requester(scenario):
     """Worker -> coordinator -> specialist works without a manager root request."""
     root, registry, brief, *_ = scenario

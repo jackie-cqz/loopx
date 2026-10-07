@@ -839,12 +839,14 @@ def test_turn_host_request_carries_typed_child_operations() -> None:
 
 
 def test_turn_host_request_carries_reward_memory_decision_context() -> None:
+    from tests.control_plane.reward_memory_host_fixture import enable_plan_memory
     plan = build_loopx_turn_plan(
         _adaptive_envelope(),
         host="codex-cli",
         execution_mode="interactive-visible",
     )
-    plan["reward_memory_recall"] = {
+    enable_plan_memory(plan)
+    plan["reward_memory_recall"].update({
         "schema_version": "agent_turn_recall_v0",
         "status": "applied",
         "context": {
@@ -858,7 +860,7 @@ def test_turn_host_request_carries_reward_memory_decision_context() -> None:
             ],
         },
         "grants_new_action_authority": False,
-    }
+    })
 
     request = build_loopx_turn_host_request(plan)
 
@@ -3035,6 +3037,8 @@ def test_turn_run_once_commits_independently_validated_progress(
         host="generic-cli",
         execution_mode="isolated-headless",
     )
+    from tests.control_plane.reward_memory_host_fixture import enable_plan_memory
+    enable_plan_memory(plan)
 
     def host_runner(request: dict[str, object]) -> dict[str, object]:
         return {
@@ -3462,6 +3466,8 @@ def test_turn_run_once_codex_cli_wires_validated_reflection_post_settlement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project, runtime, registry = _write_live_fixture(tmp_path)
+    from tests.control_plane.reward_memory_host_fixture import enable_live_memory
+    enable_live_memory(registry)
     reflection = json.dumps(
         {
             "schema_version": "turn_reward_memory_reflection_v1",

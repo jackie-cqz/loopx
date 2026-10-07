@@ -345,12 +345,23 @@ def test_paused_lead_stays_pending_and_is_not_unpaused(mode):  # noqa: F811
     assert calls == []
 
 
-def test_stopped_goal_refuses_the_wake(mode):  # noqa: F811
+@pytest.mark.parametrize("state_format", ["legacy", "canonical"])
+def test_stopped_goal_refuses_the_wake(mode, state_format):  # noqa: F811
     service, sid, calls = _idle_resumable_lead(mode)
     repo = mode[2]
     registry = service.controller.registry_path
     payload = json.loads(registry.read_text())
-    next(goal for goal in payload["goals"] if goal["id"] == "research")["status"] = "stopped"
+    goal = next(goal for goal in payload["goals"] if goal["id"] == "research")
+    if state_format == "legacy":
+        goal["status"] = "stopped"
+    else:
+        goal.pop("status", None)
+        goal["activation"] = {
+            "schema_version": "loopx_goal_activation_v1",
+            "state": "stopped",
+            "updated_at": "2026-10-06T00:00:00Z",
+            "reason": "Owner stopped the Goal.",
+        }
     registry.write_text(json.dumps(payload))
     path = _write_record(service, session_id=sid)
 

@@ -579,6 +579,7 @@ def _turn_scoped_cli_settlement_context(
     ),
     turn_instance_id: str | None = None,
     runtime_root: str | None = None,
+    registry_path: str | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     if selection.action_portfolio_requires_explicit_selection(payload):
         return None, None
@@ -622,7 +623,7 @@ def _turn_scoped_cli_settlement_context(
         ),
         goal_id=goal_id,
         agent_id=agent_id,
-        command_prefix=selection.render_cli_command_prefix(runtime_root=runtime_root),
+        command_prefix=selection.render_cli_command_prefix(runtime_root=runtime_root, registry_path=registry_path),
         todo_id=todo_id,
         replan_obligation_id=replan_obligation_id,
         scoped_cli_args=scoped_cli_args,
@@ -696,11 +697,13 @@ def _selection_recovery_command(
     payload: dict[str, Any], *, available_capabilities: Any,
     scheduler_execution_context: Mapping[str, Any] | SchedulerExecutionContextResolution | None,
     turn_instance_id: str | None, runtime_root: str | None,
+    registry_path: str | None = None,
 ) -> str:
     identity = payload.get("agent_identity") if isinstance(payload.get("agent_identity"), dict) else {}
     return selection.action_selection_recovery_command(
         goal_id=str(payload.get("goal_id") or "<GOAL_ID>"),
         agent_id=identity.get("agent_id"), runtime_root=runtime_root,
+        registry_path=registry_path,
         turn_instance_id=turn_instance_id, available_capabilities=available_capabilities,
         scheduler_args=render_scheduler_execution_args(scheduler_execution_context=scheduler_execution_context),
     ) + _goal_ref_cli_arg(payload)
@@ -740,6 +743,7 @@ def interaction_next_cli_actions(
             payload, available_capabilities=available_capabilities,
             scheduler_execution_context=scheduler_execution_context,
             turn_instance_id=turn_instance_id, runtime_root=runtime_root,
+            registry_path=registry_path,
         )]
     goal_id = str(payload.get("goal_id") or "<GOAL_ID>")
     command_prefix = selection.render_cli_command_prefix(runtime_root=runtime_root, registry_path=registry_path)
@@ -760,6 +764,7 @@ def interaction_next_cli_actions(
             scheduler_execution_context=scheduler_execution_context,
             turn_instance_id=turn_instance_id,
             runtime_root=runtime_root,
+            registry_path=registry_path,
         )
     settlement_args = settlement_binding_args(settlement_plan)
     try:
@@ -774,6 +779,7 @@ def interaction_next_cli_actions(
         scheduler_args=scheduler_args,
         turn_instance_id=turn_instance_id,
         runtime_root=runtime_root,
+        registry_path=registry_path,
     )
     if selection_command_template:
         return [selection_command_template + _goal_ref_cli_arg(payload)]
@@ -947,7 +953,7 @@ def interaction_next_cli_actions(
             (
             f"{command_prefix} todo update --goal-id {goal_id} --todo-id {todo_id}"
             f"{lifecycle_actor_args} --status open --clear-resume-when "
-            "--note '<public-safe successor replan reason>'"
+            "--reason '<public-safe successor replan reason>'"
             ),
             f"{command_prefix} refresh-state --goal-id {goal_id} --classification successor_replan_recorded --delivery-batch-scale single_surface --delivery-outcome outcome_progress{settlement_args}{scoped_cli_args}",
             quota_spend_action,
@@ -1316,6 +1322,7 @@ def _build_interaction_cli_channel(
             payload, available_capabilities=available_capabilities,
             scheduler_execution_context=scheduler_execution_context,
             turn_instance_id=turn_instance_id, runtime_root=runtime_root,
+            registry_path=registry_path,
         ))
     spend_after_selection = selection.delivery_spend_allowed(payload, spend_after_validation)
     settlement_plan, replan_settlement_contract = (
@@ -1325,6 +1332,7 @@ def _build_interaction_cli_channel(
             scheduler_execution_context=scheduler_execution_context,
             turn_instance_id=turn_instance_id,
             runtime_root=runtime_root,
+            registry_path=registry_path,
         )
     )
     channel = {
@@ -1682,6 +1690,7 @@ def build_interaction_contract(
                 payload, available_capabilities=available_capabilities,
                 scheduler_execution_context=scheduler_execution_context,
                 turn_instance_id=turn_instance_id, runtime_root=runtime_root,
+                registry_path=registry_path,
             ),
         }
     else:

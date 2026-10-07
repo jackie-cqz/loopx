@@ -8,7 +8,6 @@ from .capabilities.machine_configuration.goal_storage import new_goal_storage_ta
 from .registry import find_registry_goal
 from .control_plane.coordination.legacy_writer_fence import legacy_todo_write_transaction, require_legacy_state_replacement_allowed
 from .control_plane.coordination.legacy_writer_fence import require_registry_source_write_allowed
-from .control_plane.coordination.runtime_shadow_writer_adapter import require_runtime_shadow_capture_prepared, begin_todo_runtime_shadow_capture, settle_todo_runtime_shadow_capture
 from .control_plane.projects.registry_codec import (
     load_project_registry,
     project_registry_transaction,
@@ -18,9 +17,9 @@ from typing import Any
 
 from .control_plane.runtime.time import now_local_iso
 from .control_plane.runtime.public_safety import public_safe_compact_text
+from .control_plane.runtime.document_io import atomic_write_state_text
 from .control_plane.todos.active_state_editing import (
     TODO_SECTION_HEADINGS,
-    atomic_write_state_text,
     insertion_anchor,
     section_bounds,
 )
@@ -351,7 +350,7 @@ def bootstrap_project(
     if not state_file.is_absolute():
         state_file = project / state_file
     goal_doc = resolve_project_path(project, goal_doc)
-    runtime_root = resolve_runtime_root(read_json_if_exists(registry_path), str(runtime_root) if runtime_root else None, registry_path=registry_path)
+    runtime_root = resolve_runtime_root(read_json_if_exists(registry_path), str(runtime_root) if runtime_root else None, registry_path=registry_path).resolve()
     updated_at = now_iso()
     execution_profile = build_execution_profile(
         minimum_scale=execution_minimum_scale,
@@ -569,7 +568,7 @@ def bootstrap_project(
             # A first explicit bootstrap has no previous Goal authority to fence.
             # Existing Goals still resolve and authorize their original route.
             if current_registry.get("goals"):
-                previous_root = resolve_runtime_root(current_registry, None, registry_path=registry_path)
+                previous_root = resolve_runtime_root(current_registry, None, registry_path=registry_path).resolve()
                 if previous_root != runtime_root:
                     for previous_goal in current_registry["goals"]:
                         if isinstance(previous_goal, dict) and previous_goal.get("id"):
@@ -606,6 +605,11 @@ def bootstrap_project(
                     require_registry_source_write_allowed(registry_path=registry_path, runtime_root=runtime_root,
                         goal_id=goal_id, state_file=state_file)
                 if not canonical_creation:
+                    from .control_plane.coordination.runtime_shadow_writer_adapter import (
+                        begin_todo_runtime_shadow_capture,
+                        require_runtime_shadow_capture_prepared,
+                    )
+
                     shadow_capture = begin_todo_runtime_shadow_capture(registry_path=registry_path,
                         runtime_root=runtime_root, goal_id=goal_id, state_path=state_file,
                         write_class="bootstrap_state", original_text=original)
@@ -626,6 +630,8 @@ def bootstrap_project(
         # retarget that Goal. The TS owner refuses replacing an existing provider.
         storage_selection = initialize_goal_storage_target(runtime_root, find_registry_goal(registry, goal_id) or {}, registry_path=registry_path)
         if shadow_capture is not None:
+            from .control_plane.coordination.runtime_shadow_writer_adapter import settle_todo_runtime_shadow_capture
+
             shadow_evidence = settle_todo_runtime_shadow_capture({}, registry_path=registry_path,
                 runtime_root=runtime_root, goal_id=goal_id, capture=shadow_capture, emit_disabled=False)
         if sync_global:

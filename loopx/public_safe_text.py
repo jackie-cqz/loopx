@@ -227,6 +227,59 @@ PUBLIC_SAFE_LOCAL_PATH_PATTERNS: tuple[re.Pattern[str], ...] = (
     PATH_PREFIX_LOCAL_PATTERN,
     LOCAL_PATH_BOUNDARY_REFERENCE_PATTERN,
 )
+# Presentation redaction keeps its historical Unix-root boundary behavior (it
+# catches paths even after a colon), consumes the shared absolute, drive-letter
+# and UNC detector, and recognizes extended Windows device paths for display
+# only. Those extended forms remain outside the shared state-owner contract.
+# Keeping these definitions here lets presentation choose its own redaction
+# policy without changing other callers (Refs #5136, direction 3).
+PRESENTATION_COLON_PREFIXED_WINDOWS_PATH_PATTERN = re.compile(
+    r"(?<=:)(?:"
+    r"[A-Za-z]:[\\/][^\s`|,)]+|"
+    r"\\\\\?\\(?:(?i:UNC)\\[A-Za-z0-9_.-]+\\|(?i:Volume)\{[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}\\)[^\s`|,)]+|"
+    r"\\\\\?\\(?i:GLOBALROOT\\Device\\)[^\s`|,)]+|"
+    r"\\\\[A-Za-z0-9_.-]+\\[^\s`|,)]+"
+    r")"
+)
+PRESENTATION_EXTENDED_WINDOWS_PATH_PATTERN = re.compile(
+    r"\\\\\?\\(?:(?i:UNC)\\[A-Za-z0-9_.-]+\\|"
+    r"(?i:Volume)\{[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}\\|"
+    r"(?i:GLOBALROOT\\Device\\))[^\s`|,)]+",
+    re.IGNORECASE,
+)
+PRESENTATION_LOCAL_PATH_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"/(?:Users|home|private|tmp|var)/[^\s`|,)]+"),
+    LOCAL_PATH_SURFACE_PATTERN,
+    PRESENTATION_EXTENDED_WINDOWS_PATH_PATTERN,
+    PRESENTATION_COLON_PREFIXED_WINDOWS_PATH_PATTERN,
+)
+PRESENTATION_PUBLIC_BOUNDARY_PATTERNS: tuple[
+    tuple[str, re.Pattern[str]], ...
+] = (
+    (
+        "absolute local path",
+        re.compile(
+            r"/(?:Users|home|private|tmp|var)/[^\s`\"'<>]+|"
+            + "(?:"
+            + LOCAL_PATH_SURFACE_PATTERN.pattern
+            + "|"
+            + PRESENTATION_EXTENDED_WINDOWS_PATH_PATTERN.pattern
+            + ")|"
+            + PRESENTATION_COLON_PREFIXED_WINDOWS_PATH_PATTERN.pattern
+        ),
+    ),
+    (
+        "private key material",
+        re.compile(r"BEGIN (?:RSA |OPENSSH |EC |)PRIVATE KEY"),
+    ),
+    (
+        "credential assignment",
+        re.compile(
+            r"\b(?:api[_-]?key|auth[_-]?token|access[_-]?token)\s*[:=]",
+            re.IGNORECASE,
+        ),
+    ),
+)
 # Refs #5136: one definition for "this string carries a raw remote location".
 # Three validators each restated the same scheme list, and the canonical
 # public-safety owner had no counterpart, so a fourth caller had to invent one.

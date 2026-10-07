@@ -204,6 +204,30 @@ def test_delegation_captures_goal_ref_after_registry_becomes_available(tmp_path,
     assert len(calls) == 1
 
 
+def test_canonical_stopped_goal_rejects_new_delegation_before_launch(
+    service, monkeypatch
+):
+    _, runner = service
+    registry = json.loads(runner.registry.read_text())
+    goal = registry["goals"][0]
+    goal.pop("status", None)
+    goal["activation"] = {
+        "schema_version": "loopx_goal_activation_v1",
+        "state": "stopped",
+        "updated_at": "2026-10-06T00:00:00Z",
+        "reason": "Owner stopped the Goal.",
+    }
+    runner.registry.write_text(json.dumps(registry))
+    launched = []
+    monkeypatch.setattr(runner, "_spawn", launched.append)
+
+    with pytest.raises(ValueError, match="stopped"):
+        runner.start("analysis", "canonical-stopped", brief())
+
+    assert launched == []
+    assert not runner.path("canonical-stopped").exists()
+
+
 def test_worker_waits_for_a_transient_status_probe(service, monkeypatch):
     """A reader temporarily holding the lock must not discard admitted work."""
     from loopx import collaboration_mcp as delegation

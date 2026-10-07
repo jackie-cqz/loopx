@@ -92,6 +92,7 @@ from .extensions.runtime import (
 )
 from .history import load_registry
 from .chat_completed_todos import CompletedTodoPages, CompletedTodoRequestMixin
+from .chat_explore_results import ExploreResultsRequestMixin
 from .chat_todo_detail import TodoDetailRequestMixin
 from .kiro_cli_goal_mode import KIRO_CLI_BIN
 from .paths import resolve_runtime_root
@@ -454,6 +455,7 @@ class ChatRequestHandler(
     ZCodeGoalRequestMixin,
     PrivateConversationRequestMixin,
     CompletedTodoRequestMixin,
+    ExploreResultsRequestMixin,
     TodoDetailRequestMixin,
     AttachedSessionRequestMixin,
     SshSourceRequestMixin,
@@ -1436,6 +1438,7 @@ class ChatRequestHandler(
             "/api/chat/todo/detail": self._todo_detail,
             "/api/chat/completed-todos": self._completed_todos,
             "/api/chat/goal-results": self._goal_results,
+            "/api/chat/explore-results": self._explore_results,
             CHAT_SESSIONS_PATH: self._list_sessions,
             CHAT_ACTIONS_PATH: self._action_list,
             CHAT_GOAL_CONTEXTS_PATH: self._goal_contexts,

@@ -56,10 +56,15 @@ Agent 明确记录验收；宿主完成不代表证据已被采纳。
    or a bounded `skip` reason. A host capacity rejection maps to the generic
    `host_capacity_exhausted` reason. Capacity rejection and typed host failure
    stop same-Turn spawn/followup retries while parent work may continue.
-3. A started operation may get a typed `result`. Only a completed result may
-   receive `parent review`; `accepted` requires public-safe evidence and
-   validation references. Raw prompts, host errors, transcripts, local paths,
-   and credentials are excluded.
+3. A started operation may get a typed `result` (`completed`, `failed` or
+   `cancelled`). Any terminal result may receive a `deferred` or `rejected`
+   parent review; `accepted` still requires a completed result and public-safe
+   evidence and validation references. Result and nonadoption reason codes are
+   optional compact opaque diagnostics, not a provider-specific vocabulary or
+   authority. Omit them when unknown. Matching `operation` and `entrypoint-id`
+   echoes are optional for result/review; conflicting echoes are rejected,
+   including on replay. Raw prompts, host errors, transcripts, local paths and
+   credentials are excluded.
 4. Replay with the same identity and payload is idempotent; a conflicting
    payload is rejected. `read` and `agent-context --phase after_delegate_result
    --turn-instance-id ...` expose the same Turn read model. Goal status (JSON and
@@ -82,9 +87,12 @@ Agent 明确记录验收；宿主完成不代表证据已被采纳。
 2. 用稳定 `operation-id` 写 `decision`，区分 `spawn`、`followup` 和有界理由的
    `skip`。宿主容量拒绝映射为通用 `host_capacity_exhausted`；容量拒绝和
    类型化宿主失败都停止同一 Turn 的启动或跟进重试，主 Agent 仍可继续工作。
-3. 已启动操作可记录类型化 `result`；只有完成结果才能进入主 Agent `review`。
-   `accepted` 必须有公开安全的证据与验证引用。原始提示、宿主错误、对话、
-   本地路径和凭据不进入回执。
+3. 已启动操作可记录 `completed`、`failed` 或 `cancelled` 类型化结果。所有
+   终态都可登记 `deferred` 或 `rejected` 评审；`accepted` 仍要求完成结果及
+   公开安全的证据与验证引用。结果和不采用评审的原因码可选，只需是紧凑的
+   不透明诊断标识，不限定供应商词表，也不授予权限；未知时省略。结果与评审
+   可重复携带一致的 `operation`、`entrypoint-id`，冲突值包括重放时仍被拒绝。
+   原始提示、宿主错误、对话、本地路径和凭据不进入回执。
 4. 同一身份和内容重放幂等，内容冲突会被拒绝。`read` 与带 Turn ID 的
    `agent-context` 读取同一模型。Goal 状态的 JSON 与 Markdown 只在能力启用且确有决策时投影
    最近一轮；仪表板读取该投影，未配置或无关 Goal 不显示活动行。
@@ -111,6 +119,28 @@ loopx --format json --registry REGISTRY native-child record \
 loopx --format json --registry REGISTRY native-child read \
   --goal-id GOAL --agent-id COORDINATOR --turn-instance-id TURN
 ```
+
+Cancellation / 取消后登记不采用：
+
+```sh
+loopx --format json --registry REGISTRY native-child record \
+  --goal-id GOAL --agent-id COORDINATOR --turn-instance-id TURN \
+  --operation-id OPERATION --stage result --outcome cancelled \
+  --reason-code bounded_result_unavailable --execute
+loopx --format json --registry REGISTRY native-child record \
+  --goal-id GOAL --agent-id COORDINATOR --turn-instance-id TURN \
+  --operation-id OPERATION --stage review --outcome rejected --execute
+```
+
+Optional diagnostics persist as `result_reason_code` / `review_reason_code` in
+the shared activity read model. Existing receipts and reason codes remain
+valid. Exact replay must retain the originally supplied diagnostic; adding or
+changing it later is a conflicting payload, not a silent amendment. A cancelled
+or failed result cannot be accepted or rewritten as completed.
+
+可选诊断通过共享活动模型的 `result_reason_code` / `review_reason_code` 读回。
+旧回执与原因码继续有效。幂等重放须保留原诊断；事后增加或改变原因属于内容
+冲突，不会静默修改历史。取消或失败的结果不能被采用或改写为完成。
 
 The source of truth for a bound LoopX delegation remains its delegation
 operation receipt. A native child report never substitutes for that receipt or

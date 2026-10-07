@@ -16,7 +16,6 @@ from loopx.control_plane.coordination.runtime_shadow import (
     bootstrap_coordination_runtime_shadow,
     build_todo_runtime_shadow_projection,
     inspect_coordination_runtime_shadow,
-    load_task_lease_runtime_shadow_records,
     qualify_coordination_runtime_shadow,
     read_coordination_runtime_shadow_todo_candidate,
     resolve_coordination_runtime_shadow_config,
@@ -512,41 +511,6 @@ def test_todo_projection_rejects_unversioned_machine_owned_fields() -> None:
                 }
             ],
         )
-
-
-
-
-
-
-def test_lease_projection_preserves_complete_terminal_record(tmp_path: Path) -> None:
-    lease_dir = tmp_path / "goals" / "goal-a" / "task-leases"
-    lease_dir.mkdir(parents=True)
-    (lease_dir / "todo_b.json").write_text(
-        '{"schema_version":"task_lease_v0","goal_id":"goal-a",'
-        '"todo_id":"todo_b","owner":"agent-a","version":2,'
-        '"lease_epoch":1,"status":"released","released_at":"later",'
-        '"idempotency_key":"retained-identity"}',
-        encoding="utf-8",
-    )
-
-    records = load_task_lease_runtime_shadow_records(
-        runtime_root=tmp_path,
-        goal_id="goal-a",
-    )
-
-    assert records == [
-        {
-            "schema_version": "task_lease_v0",
-            "goal_id": "goal-a",
-            "idempotency_key": "retained-identity",
-            "todo_id": "todo_b",
-            "owner": "agent-a",
-            "version": 2,
-            "lease_epoch": 1,
-            "released_at": "later",
-            "status": "released",
-        }
-    ]
 
 
 

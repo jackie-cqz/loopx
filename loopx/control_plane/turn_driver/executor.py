@@ -132,6 +132,42 @@ HostRunner = Callable[[Mapping[str, Any]], dict[str, Any]]
 JournalPersist = Callable[[Mapping[str, Any]], None]
 
 
+def reward_memory_automation_enabled(
+    payload: Mapping[str, Any] | None, *, operation: str,
+) -> bool:
+    """Project verified capability automation into the host IO contract.
+
+    The experiment resolver owns enablement, config/receipt verification and
+    provider policy. A recall packet's presence or old context is not opt-in.
+    """
+    if not isinstance(payload, Mapping):
+        return False
+    recall = payload.get("reward_memory_recall")
+    if not isinstance(recall, Mapping):
+        return False
+    experiment = recall.get("experiment")
+    envelope = payload.get("turn_envelope")
+    if not isinstance(experiment, Mapping) or not isinstance(envelope, Mapping):
+        return False
+    boundary = envelope.get("boundary")
+    capabilities = boundary.get("capabilities") if isinstance(boundary, Mapping) else None
+    memory = capabilities.get("reward_memory") if isinstance(capabilities, Mapping) else None
+    return (
+        isinstance(memory, Mapping)
+        and memory.get(operation) is True
+        # Recall resolves the binding again after admission. A stale envelope
+        # must not resurrect a now unavailable or disabled binding.
+        and experiment.get("enabled") is True
+        and experiment.get("available") is True
+        and experiment.get("configured_for_agent") is True
+        and bool(envelope.get("goal_id"))
+        and experiment.get("goal_id") == envelope.get("goal_id")
+        and bool(envelope.get("agent_id"))
+        and experiment.get("agent_id") == envelope.get("agent_id")
+        and experiment.get(operation) is True
+    )
+
+
 def build_loopx_turn_host_request(plan: Mapping[str, Any]) -> dict[str, Any]:
     transaction = (
         plan.get("transaction") if isinstance(plan.get("transaction"), dict) else {}
@@ -158,8 +194,12 @@ def build_loopx_turn_host_request(plan: Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(goal_ref, Mapping):
         request["goal_ref"] = dict(goal_ref)
     reward_memory_recall = plan.get("reward_memory_recall")
-    if isinstance(reward_memory_recall, Mapping):
+    recall_enabled = reward_memory_automation_enabled(plan, operation="automatic_recall")
+    ingest_enabled = reward_memory_automation_enabled(plan, operation="automatic_ingest")
+    if isinstance(reward_memory_recall, Mapping) and (recall_enabled or ingest_enabled):
         request["reward_memory_recall"] = dict(reward_memory_recall)
+        if not recall_enabled:
+            request["reward_memory_recall"]["context"] = None
     request.update(subagent.subagent_host_request_projection(plan))
     from ...extensions.codex_native_child import configured_native_child_limit
 
@@ -323,12 +363,18 @@ def validate_loopx_turn_host_result(
         )
         if text:
             normalized[field] = text
-    reflection_json = _bounded_public_text(
-        result,
-        "reward_memory_reflection_json",
-        limit=HOST_REWARD_MEMORY_REFLECTION_JSON_MAX_CHARS,
-        required=False,
-        errors=errors,
+    # Old/custom hosts may still return this field. Ignore it while disabled:
+    # ordinary work must not gain a memory validation gate or retain the content.
+    reflection_json = (
+        _bounded_public_text(
+            result,
+            "reward_memory_reflection_json",
+            limit=HOST_REWARD_MEMORY_REFLECTION_JSON_MAX_CHARS,
+            required=False,
+            errors=errors,
+        )
+        if reward_memory_automation_enabled(plan, operation="automatic_ingest")
+        else None
     )
     if reflection_json:
         if material:

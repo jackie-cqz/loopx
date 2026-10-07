@@ -71,3 +71,19 @@ window. The existing outbox instead prepares an entry under the source writer's
 lock, marks durability, then delivers/reconciles that exact entry identity.
 Retiring the observer removes repeated parsing, hashing, retries and a second
 candidate history without discarding that stronger capture contract.
+
+## Source lease-reader cleanup
+
+Source capture reads lease bytes once through the snapshot assembler, retaining
+the complete record and byte inventory for TypeScript verification. The unused
+internal lease-reader helper and its test-only CLI export are removed. The
+terminal-record regression now runs through actual source capture, bootstrap
+and persisted File history, including unknown fields, absent/null/false values,
+cross-Goal rejection and changed-byte rejection before publication.
+Public CLI cutover and original-receipt recovery also retain the complete lease
+and later canonical work through both File and SQLite providers.
+
+This cleanup preserves live source IO, orphan-history inventory, outbox readers
+and codecs, backup import/export and original receipt recovery. It changes no
+provider default or supported migration path and performs no data rewrite.
+Whole-writer retirement still requires its own last-caller and recovery proof.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from contextlib import ExitStack
 from dataclasses import dataclass
 import hashlib
 import json
@@ -9,8 +10,16 @@ from typing import Any
 from uuid import uuid4
 
 from ...file_lock import exclusive_cross_runtime_file_lock
-from ..effect_runtime import effect_runtime_result
-from ..projects.registry_codec import source_session_registry_transaction
+from ...paths import resolve_runtime_root
+from ..coordination.shadow_management import shadow_maintenance_lock_target
+from ..effect_runtime import (
+    CANONICAL_AUTHORITY_WRITE_TIMEOUT_SECONDS,
+    effect_runtime_result,
+)
+from ..projects.registry_codec import (
+    load_project_registry,
+    source_session_registry_transaction,
+)
 from ..runtime.time import now_local_iso
 from .source_session_registry_state import (
     GOAL_INSTANCE_ID,
@@ -52,6 +61,12 @@ class _RecreationState:
     lifetime_receipts: list[dict[str, Any]]
     retiring_bindings: list[dict[str, Any]]
     decision: dict[str, Any]
+
+
+def _canonical_writer_guard_path(registry_path: Path, goal_id: str) -> Path:
+    registry = load_project_registry(registry_path)
+    runtime_root = resolve_runtime_root(registry, registry_path=registry_path)
+    return shadow_maintenance_lock_target(runtime_root.resolve(), goal_id)
 
 
 def _recreation_journal_path(
@@ -371,10 +386,16 @@ def recreate_goal_instance(request: RecreateGoalRequest) -> dict[str, Any]:
             changed=gate_changed or drain_result.changed,
         )
 
-    with exclusive_cross_runtime_file_lock(
-        guard,
-        operation="source_session_goal_lifetime_publish",
-    ):
+    with ExitStack() as locks:
+        locks.enter_context(exclusive_cross_runtime_file_lock(
+            guard,
+            operation="source_session_goal_lifetime_publish",
+        ))
+        locks.enter_context(exclusive_cross_runtime_file_lock(
+            _canonical_writer_guard_path(request.registry_path, request.goal_id),
+            operation="source_session_goal_canonical_publish",
+            timeout_seconds=CANONICAL_AUTHORITY_WRITE_TIMEOUT_SECONDS,
+        ))
         journal = _read_recreation_journal(journal_path)
         if journal is None:
             raise RuntimeError("Goal recreation reservation journal is missing")

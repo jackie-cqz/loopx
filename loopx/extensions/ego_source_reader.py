@@ -1,4 +1,4 @@
-"""Opt-in rendered-source MCP adapter for an existing, reserved Ego Page.
+"""Opt-in rendered-source MCP adapter for a reserved Ego Page.
 
 This transport owns no Session, grant, material store or model runner. Operator
 configuration selects the browser endpoint and origins; tool input selects only
@@ -11,11 +11,14 @@ import hashlib
 import json
 import os
 import re
+import signal
 import subprocess
 import threading
+import time
 import tempfile
 import struct
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, replace
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -27,6 +30,7 @@ MAX_IMAGE_EDGE = 4096
 MAX_IMAGE_ITEMS = 128
 TIMEOUT_SECONDS = 30
 MARKER = "LOOPX_PUBLIC_SOURCE:"
+SPACE_MARKER = "LOOPX_READER_SPACE:"
 _READ_LOCK = threading.Lock()
 
 
@@ -50,7 +54,7 @@ def _url(value: str) -> tuple[str, str]:
 @dataclass(frozen=True)
 class ReaderConfig:
     executable: str
-    task_space: int
+    task_space: int | None
     page: str
     origins: frozenset[str]
 
@@ -59,10 +63,12 @@ class ReaderConfig:
         executable = Path(os.environ["LOOPX_EGO_READ_BIN"]).expanduser()
         if not executable.is_absolute() or not executable.is_file():
             raise ValueError("configure an installed executable")
-        space = int(os.environ["LOOPX_EGO_READ_TASK_SPACE"])
-        page = os.environ["LOOPX_EGO_READ_PAGE"]
-        if space <= 0 or not re.fullmatch(r"p[1-9][0-9]*", page):
-            raise ValueError("configure an existing TaskSpace and Page label")
+        setting = os.environ["LOOPX_EGO_READ_TASK_SPACE"]
+        space = None if setting == "auto" else int(setting)
+        page = os.environ.get("LOOPX_EGO_READ_PAGE", "p1")
+        if ((space is not None and space <= 0) or not re.fullmatch(r"p[1-9][0-9]*", page)
+                or (space is None and page != "p1")):
+            raise ValueError("configure an existing Page or auto with p1")
         origins = set()
         for entry in os.environ["LOOPX_EGO_READ_ORIGINS"].split(","):
             canonical, origin = _url(entry.strip())
@@ -72,7 +78,75 @@ class ReaderConfig:
         return cls(str(executable.resolve(strict=True)), space, page, frozenset(origins))
 
 
-def _navigation(config: ReaderConfig, url: str) -> str:
+class _OwnedSpace:
+    """One lazily created space per MCP process; never owns configured spaces."""
+
+    def __init__(self) -> None:
+        # Ego's named factory reuses existing agent-owned spaces. A stable
+        # nonce belongs to this MCP host, not to all hosts of this provider.
+        self.name = f"LoopX public-source reader {uuid.uuid4().hex}"
+        self.space: int | None = None
+        self.executable: str | None = None
+        self.creation_attempted = False
+
+    def resolve(self, config: ReaderConfig, *, deadline: float | None = None) -> ReaderConfig:
+        if config.task_space is not None:
+            return config
+        if self.executable is not None and self.executable != config.executable:
+            raise ValueError("reader executable changed")
+        if self.space is None:
+            # A lost creation receipt is ambiguous: don't create another space
+            # on the next tool call. An operator must inspect/restart the host.
+            if self.creation_attempted:
+                raise ValueError("reader space creation outcome unknown")
+            self.creation_attempted = True
+            self.executable = config.executable
+            script = (f"const t=await taskSpace({json.dumps(self.name)});"
+                      f"console.log({json.dumps(SPACE_MARKER)}+JSON.stringify({{id:t.spaceId}}));")
+            result = _run(config.executable, script, deadline=deadline)
+            values = [line[len(SPACE_MARKER):] for line in (result.stdout + "\n" + result.stderr).splitlines()
+                      if line.startswith(SPACE_MARKER)]
+            if result.returncode or len(values) != 1:
+                raise ValueError("reader space creation failed")
+            value = json.loads(values[0])
+            if not isinstance(value, dict) or type(value.get("id")) is not int or value["id"] <= 0:
+                raise ValueError("invalid reader space receipt")
+            self.space = value["id"]
+        return replace(config, task_space=self.space)
+
+    def forget_closed(self) -> None:
+        self.space = None
+        self.creation_attempted = False
+
+    def close(self) -> None:
+        if self.space is None or self.executable is None:
+            return
+        space, self.space = self.space, None
+        # Only this process's created space, and only while still agent-owned.
+        # Never claim/take over a space after the user or another owner stops it.
+        script = (f"const t=await taskSpace({space});"
+                  "if(t.ownership==='agent')await t.finish({keep:[]});")
+        try:
+            _run(self.executable, script)
+        except (OSError, UnicodeError, subprocess.TimeoutExpired):
+            pass
+
+
+_OWNED_SPACE = _OwnedSpace()
+
+
+def _run(executable: str, script: str, *, deadline: float | None = None) -> subprocess.CompletedProcess[str]:
+    timeout = TIMEOUT_SECONDS if deadline is None else deadline - time.monotonic()
+    if timeout <= 0:
+        raise subprocess.TimeoutExpired(executable, TIMEOUT_SECONDS)
+    return subprocess.run(
+        [executable, "nodejs", "-e", script],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
+        timeout=timeout, check=False,
+    )
+
+
+def _navigation(config: ReaderConfig, url: str, *, image: bool = False) -> str:
     # Use the browser's URL rules before navigation, including dot segments and
     # query escaping. The fixed operator-owned script, not page data, supplies
     # this canonical target. Recheck its origin before touching the reserved Page.
@@ -80,8 +154,43 @@ def _navigation(config: ReaderConfig, url: str) -> str:
         f"const requestedUrl={json.dumps(url)};const target=new URL(requestedUrl);target.hash='';"
         f"const origins={json.dumps(sorted(config.origins))}.map(o=>new URL(o).origin);"
         "if(!origins.includes(target.origin))throw new Error('source_origin_not_authorized');"
-        f"const t=await taskSpace({config.task_space});const p=t.page({json.dumps(config.page)});"
+        f"let t;try{{t=await taskSpace({config.task_space});}}catch(e){{"
+        "if(/task space not found/i.test(String(e?.message)))"
+        f"console.log({json.dumps(SPACE_MARKER)}+JSON.stringify({{closed:true}}));throw e;}}"
+        f"const p=t.page({json.dumps(config.page)});"
         "await p.goto(target.href);"
+        # Navigation can finish while an SPA contains only its navigation or
+        # a loading shell. Prefer semantic content, including short posts;
+        # unrelated sidebar/comment spinners must not delay a readable article.
+        "let sourceReady=true;try{await p.waitForFunction((url)=>{"
+        "const current=new URL(location.href);current.hash='';"
+        "if(current.href!==url)return true;"
+        "const ancillary='aside,nav,header,footer,[role=\"complementary\"],"
+        "[role=\"navigation\"],[role=\"banner\"],[role=\"contentinfo\"]';"
+        "const main=Array.from(document.querySelectorAll('main,[role=\"main\"]'))"
+        ".find(n=>!n.closest(ancillary));"
+        "const articles=Array.from((main||document).querySelectorAll('article'))"
+        ".filter(n=>!n.closest(ancillary));"
+        "const roots=articles.length?articles:[main||document.body];"
+        "return roots.some(root=>{"
+        "if(!root||root.closest('[aria-busy=\"true\"]'))return false;"
+        "const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);"
+        "let node,hasText=false;while((node=walker.nextNode())){"
+        "const parent=node.parentElement;"
+        "if(!node.textContent.trim()||!parent||parent.closest(ancillary)"
+        "||getComputedStyle(parent).visibility==='hidden')continue;"
+        "const range=document.createRange();range.selectNodeContents(node);"
+        "if(range.getClientRects().length){hasText=true;break;}}"
+        "const hasImage=Array.from(root.querySelectorAll('img')).some(im=>"
+        "!im.closest(ancillary)&&im.complete&&im.naturalWidth>0&&im.naturalHeight>0&&im.getClientRects().length"
+        "&&getComputedStyle(im).visibility!=='hidden');"
+        f"if(!hasText&&!({json.dumps(image)}&&hasImage))return false;"
+        "return !Array.from(root.querySelectorAll('[role=\"progressbar\"],[aria-busy=\"true\"]'))"
+        ".some(n=>!n.closest(ancillary)&&n.getClientRects().length"
+        "&&getComputedStyle(n).visibility!=='hidden');});"
+        "},target.href,{timeout:10000});}catch(e){"
+        "if(!String(e?.message).includes('page.waitForFunction timed out'))throw e;"
+        "sourceReady=false;}"
     )
 
 
@@ -94,13 +203,14 @@ def _script(config: ReaderConfig, url: str) -> str:
         # Fence before reading DOM, atomically with extraction. A raced Page or
         # redirect returns no content, even within another authorized origin.
         "if(current.href!==request.url)return {error:'source_url_changed'};"
+        "if(!request.ready)return {error:'source_content_not_ready'};"
         "const text=document.body?.innerText||'';"
         "return {url:current.href,title:document.title,"
         "text:text.slice(0,request.limit),truncated:text.length>request.limit,"
         "image_count:document.images.length,images:Array.from(document.images).slice(0,128)"
         ".map((im,index)=>({index,alt:im.alt.slice(0,512),"
         "natural_width:im.naturalWidth,natural_height:im.naturalHeight}))};"
-        f"}},{{url:target.href,limit:{MAX_TEXT_CHARS}}});"
+        f"}},{{url:target.href,limit:{MAX_TEXT_CHARS},ready:sourceReady}});"
         f"console.log({json.dumps(MARKER)}+JSON.stringify({{...r,"
         "requested_url:requestedUrl,canonical_url:target.href}));"
     )
@@ -128,8 +238,8 @@ def _result(stdout: str, stderr: str, url: str) -> dict[str, object]:
         value = json.loads(values[0])
         if not isinstance(value, dict):
             raise ValueError("object required")
-        if value.get("error") == "source_url_changed":
-            return {"ok": False, "error": "source_url_changed"}
+        if value.get("error") in {"source_url_changed", "source_content_not_ready"}:
+            return {"ok": False, "error": value["error"]}
         final = _result_url(value, url)
         text, title = value["text"], value["title"]
         if (not isinstance(text, str) or not text.strip()
@@ -170,13 +280,14 @@ def _image_inventory(value: object) -> list[dict[str, object]]:
 
 def _image_script(config: ReaderConfig, url: str, index: int, path: str) -> str:
     # Capture one rendered image region, never a caller-selected path or script.
-    request = f"{{url:target.href,index:{index},edge:{MAX_IMAGE_EDGE}}}"
+    request = f"{{url:target.href,index:{index},edge:{MAX_IMAGE_EDGE},ready:sourceReady}}"
     return (
-        _navigation(config, url) +
+        _navigation(config, url, image=True) +
         f"const request={request};"
         "const initial=await p.evaluate((r)=>{"
         "const u=new URL(location.href);u.hash='';"
         "if(u.href!==r.url)return {error:'source_url_changed'};"
+        "if(!r.ready)return {error:'source_content_not_ready'};"
         "const im=document.images[r.index];if(!im)return {error:'source_image_unavailable'};"
         "im.scrollIntoView({block:'center'});return {ok:true};},request);"
         "if(initial.error){console.log('LOOPX_PUBLIC_SOURCE:'+JSON.stringify(initial));}else{"
@@ -214,7 +325,7 @@ def _image_result(stdout: str, stderr: str, url: str, index: int, path: str) -> 
         value = json.loads(values[0])
         if not isinstance(value, dict):
             raise ValueError("object required")
-        if value.get("error") in {"source_url_changed", "source_image_unavailable",
+        if value.get("error") in {"source_url_changed", "source_content_not_ready", "source_image_unavailable",
                                    "source_image_bounds_unsupported"}:
             return {"ok": False, "error": value["error"]}
         final = _result_url(value, url)
@@ -253,17 +364,21 @@ def _read(url: str, image_index: int | None = None, screenshot_path: str = "") -
     if origin not in config.origins:
         return {"ok": False, "error": "source_origin_not_authorized"}
     # Concurrent calls within this MCP process do not navigate the reserved Page
-    # over one another. Separate processes must reserve separate existing Pages.
+    # over one another. Auto mode gives each process a distinct owned space.
     if not _READ_LOCK.acquire(blocking=False):
         return {"ok": False, "error": "source_reader_busy"}
     try:
-        script = (_script(config, canonical) if image_index is None else
-                  _image_script(config, canonical, image_index, screenshot_path))
-        result = subprocess.run(
-            [config.executable, "nodejs", "-e", script],
-            stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
-            timeout=TIMEOUT_SECONDS, check=False,
-        )
+        deadline = time.monotonic() + TIMEOUT_SECONDS
+        for attempt in range(2):
+            resolved = _OWNED_SPACE.resolve(config, deadline=deadline)
+            script = (_script(resolved, canonical) if image_index is None else
+                      _image_script(resolved, canonical, image_index, screenshot_path))
+            result = _run(config.executable, script, deadline=deadline)
+            if (attempt == 0 and config.task_space is None and result.returncode
+                    and SPACE_MARKER + '{"closed":true}' in (result.stdout + "\n" + result.stderr).splitlines()):
+                _OWNED_SPACE.forget_closed()
+                continue
+            break
         if result.returncode:
             return {"ok": False, "error": "browser_read_failed",
                     "exit_code": result.returncode}
@@ -274,6 +389,8 @@ def _read(url: str, image_index: int | None = None, screenshot_path: str = "") -
         return {"ok": False, "error": "browser_read_timeout"}
     except (OSError, UnicodeError):
         return {"ok": False, "error": "browser_read_unavailable"}
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "source_reader_space_unavailable"}
     finally:
         _READ_LOCK.release()
 
@@ -319,7 +436,15 @@ def main() -> None:
         readOnlyHint=True, destructiveHint=False, idempotentHint=True,
         openWorldHint=True,
     ))(read_public_image)
-    server.run(transport="stdio")
+    previous = signal.getsignal(signal.SIGTERM)
+    def terminate(_signum: int, _frame: object) -> None:
+        raise SystemExit(0)
+    signal.signal(signal.SIGTERM, terminate)
+    try:
+        server.run(transport="stdio")
+    finally:
+        _OWNED_SPACE.close()
+        signal.signal(signal.SIGTERM, previous)
 
 
 if __name__ == "__main__":

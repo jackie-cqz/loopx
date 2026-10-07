@@ -4,7 +4,9 @@ import argparse
 from collections.abc import Callable
 from pathlib import Path
 
+from ...file_lock import exclusive_file_lock
 from .core import (
+    default_registry_path,
     list_connectors,
     load_connector_registry,
     rank_connectors,
@@ -104,29 +106,33 @@ def handle_connector_command(
                        "ranked": rank_connectors(state)}, output_format(args), _render_rank_markdown)
         return 0
     if action == "register":
-        state = load_connector_registry(args.path)
-        result = register_connector(
-            state, args.connector_id, name=args.name, layer=args.layer, kind=args.kind,
-            status=args.status, credential=args.credential, value_tier=args.value_tier,
-            purpose=args.purpose, blocker=args.blocker,
-        )
-        merged = {**state, "connectors": result["connectors"], "usage": result["usage_map"],
-                  "updated_at": result["updated_at"]}
-        save_connector_registry(merged, args.path)
+        lock_path = (args.path or default_registry_path()).expanduser().resolve(strict=False)
+        with exclusive_file_lock(lock_path, operation="connector-register"):
+            state = load_connector_registry(args.path)
+            result = register_connector(
+                state, args.connector_id, name=args.name, layer=args.layer, kind=args.kind,
+                status=args.status, credential=args.credential, value_tier=args.value_tier,
+                purpose=args.purpose, blocker=args.blocker,
+            )
+            merged = {**state, "connectors": result["connectors"], "usage": result["usage_map"],
+                      "updated_at": result["updated_at"]}
+            save_connector_registry(merged, args.path)
         print_payload(result, output_format(args), lambda p: f"registered: {args.connector_id}")
         return 0
     if action == "use":
-        state = load_connector_registry(args.path)
-        try:
-            result = record_connector_use(state, args.connector_id, ok=not args.fail,
-                                          ms=args.ms, manual_note=args.note)
-        except KeyError as exc:
-            print_payload({"ok": False, "error": str(exc)}, output_format(args),
-                          lambda p: f"error: {p['error']}")
-            return 1
-        merged = {**state, "connectors": result["connectors"], "usage": result["usage_map"],
-                  "updated_at": result["updated_at"]}
-        save_connector_registry(merged, args.path)
+        lock_path = (args.path or default_registry_path()).expanduser().resolve(strict=False)
+        with exclusive_file_lock(lock_path, operation="connector-use"):
+            state = load_connector_registry(args.path)
+            try:
+                result = record_connector_use(state, args.connector_id, ok=not args.fail,
+                                              ms=args.ms, manual_note=args.note)
+            except KeyError as exc:
+                print_payload({"ok": False, "error": str(exc)}, output_format(args),
+                              lambda p: f"error: {p['error']}")
+                return 1
+            merged = {**state, "connectors": result["connectors"], "usage": result["usage_map"],
+                      "updated_at": result["updated_at"]}
+            save_connector_registry(merged, args.path)
         print_payload(result, output_format(args), lambda p: f"recorded {p['connector_id']} ok={not args.fail}")
         return 0
     return None

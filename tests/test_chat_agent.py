@@ -43,11 +43,13 @@ def test_silent_event_reader_releases_dispatch_fence_for_control_receipt(tmp_pat
 
 
 class _FakeAppServerProcess:
-    def __init__(self) -> None:
+    def __init__(self, *, config_response=None) -> None:
         responses = [
             {"id": 1, "result": {"serverInfo": {"name": "fake-codex"}}},
             {"id": 2, "result": {"thread": {"id": "thread-loopx-chat"}}},
         ]
+        if config_response is not None:
+            responses.insert(1, {"id": 3, "result": config_response})
         self.stdin = io.StringIO()
         self.stdout = io.StringIO(
             "".join(json.dumps(response) + "\n" for response in responses)
@@ -492,6 +494,99 @@ def test_explicit_manager_model_and_effort_reach_start_resume_and_turn(
         session.close()
 
 
+@pytest.mark.parametrize("grant,sandbox", [
+    ("workspace_write", "workspace-write"), ("workspace_read", "read-only"),
+])
+@pytest.mark.parametrize("explicit", [{}, {"model": "pinned-model"}, {"reasoning_effort": "low"}])
+def test_project_resume_uses_effective_host_settings_without_widening_grant(
+    monkeypatch, tmp_path, grant, sandbox, explicit
+):
+    from loopx.capabilities.native_chat.project_context import ChatProjectContexts
+
+    context = ChatProjectContexts([tmp_path], workspace_grant=grant).available()[0]
+    process = _FakeAppServerProcess(config_response={"config": {
+        "model": "project-model", "model_reasoning_effort": "high",
+        "sandbox_mode": "danger-full-access", "approval_policy": "on-request",
+    }})
+    real_which, real_popen = chat_agent.shutil.which, chat_agent.subprocess.Popen
+    monkeypatch.setattr(chat_agent.shutil, "which", lambda binary: "codex" if binary == "codex" else real_which(binary))
+    monkeypatch.setattr(chat_agent.subprocess, "Popen", lambda command, *a, **k:
+        process if command[0] == "codex" else real_popen(command, *a, **k))
+    session = chat_agent.CodexChatAgentSession.start(
+        codex_bin="codex", work_dir=tmp_path, goal_id=None, objective="project",
+        project_context=context, resume_thread_id="thread-loopx-chat", **explicit,
+    )
+    try:
+        requests = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
+        assert next(r for r in requests if r.get("method") == "config/read")["params"] == {
+            "cwd": str(tmp_path), "includeLayers": False,
+        }
+        resume = next(r for r in requests if r.get("method") == "thread/resume")["params"]
+        assert not any(r.get("method") == "thread/start" for r in requests)
+        assert resume["threadId"] == session.thread_id == "thread-loopx-chat"
+        assert resume["model"] == explicit.get("model", "project-model")
+        assert resume["config"] == {"model_reasoning_effort": explicit.get("reasoning_effort", "high")}
+        assert resume["sandbox"] == sandbox and resume["approvalPolicy"] == "never"
+        sent = []
+        monkeypatch.setattr(session, "_request", lambda method, params, **kw: (
+            sent.append((method, params)) or {"turn": {"id": "same-thread-turn"}}))
+        monkeypatch.setattr(session, "_next_event", lambda **kw: {
+            "method": "turn/completed", "params": {"turn": {"status": "completed"}},
+        })
+        session.send("Continue the project request.")
+        assert sent[0][1]["model"] == resume["model"]
+        assert sent[0][1]["effort"] == resume["config"]["model_reasoning_effort"]
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize("config", [[], {"model": 42}, {"model_reasoning_effort": {"invalid": "high"}}])
+def test_invalid_effective_project_settings_close_without_replacement_thread(monkeypatch, tmp_path, config):
+    from loopx.capabilities.native_chat.project_context import ChatProjectContexts
+
+    process = _FakeAppServerProcess(config_response={"config": config})
+    real_which, real_popen = chat_agent.shutil.which, chat_agent.subprocess.Popen
+    monkeypatch.setattr(chat_agent.shutil, "which", lambda binary: "codex" if binary == "codex" else real_which(binary))
+    monkeypatch.setattr(chat_agent.subprocess, "Popen", lambda command, *a, **k:
+        process if command[0] == "codex" else real_popen(command, *a, **k))
+    with pytest.raises(chat_agent.CodexChatAgentError, match="invalid project"):
+        chat_agent.CodexChatAgentSession.start(
+            codex_bin="codex", work_dir=tmp_path, goal_id=None, objective="project",
+            project_context=ChatProjectContexts([tmp_path]).available()[0],
+            resume_thread_id="thread-loopx-chat",
+        )
+    assert process.poll() is not None
+    requests = [json.loads(line) for line in process.stdin.getvalue().splitlines()]
+    assert not any(r.get("method") in {"thread/start", "thread/resume"} for r in requests)
+
+
+def test_project_resume_config_read_failure_does_not_resume_or_replace(monkeypatch, tmp_path):
+    from loopx.capabilities.native_chat.project_context import ChatProjectContexts
+
+    requests = []
+    original = chat_agent.CodexChatAgentSession._request
+
+    def request(self, method, params, **kwargs):
+        requests.append(method)
+        if method == "config/read":
+            raise self._runtime_error("Codex project configuration is unavailable.")
+        return original(self, method, params, **kwargs)
+
+    process = _FakeAppServerProcess()
+    real_which, real_popen = chat_agent.shutil.which, chat_agent.subprocess.Popen
+    monkeypatch.setattr(chat_agent.shutil, "which", lambda binary: "codex" if binary == "codex" else real_which(binary))
+    monkeypatch.setattr(chat_agent.subprocess, "Popen", lambda command, *a, **k:
+        process if command[0] == "codex" else real_popen(command, *a, **k))
+    monkeypatch.setattr(chat_agent.CodexChatAgentSession, "_request", request)
+    with pytest.raises(chat_agent.CodexChatAgentError, match="configuration is unavailable"):
+        chat_agent.CodexChatAgentSession.start(
+            codex_bin="codex", work_dir=tmp_path, goal_id=None, objective="project",
+            project_context=ChatProjectContexts([tmp_path]).available()[0],
+            resume_thread_id="thread-loopx-chat",
+        )
+    assert requests == ["initialize", "config/read"] and process.poll() is not None
+
+
 @pytest.mark.parametrize("terminal_method", ["error", "turn/completed"])
 @pytest.mark.parametrize(
     "info,expected",
@@ -586,7 +681,11 @@ def test_unstructured_upstream_error_stays_generic() -> None:
     assert "private upstream" not in str(error) + json.dumps(error.gate)
 
 
-@pytest.mark.parametrize("retry_info", ["rateLimitExceeded", "serverOverloaded"])
+@pytest.mark.parametrize("retry_info", [
+    "rateLimitExceeded", "serverOverloaded",
+    {"responseStreamConnectionFailed": {"httpStatusCode": 429}},
+    {"responseStreamDisconnected": {"httpStatusCode": 503}},
+])
 def test_retry_and_unrelated_policy_events_do_not_terminate_current_turn(
     monkeypatch, tmp_path, retry_info
 ):
@@ -621,7 +720,11 @@ def test_retry_and_unrelated_policy_events_do_not_terminate_current_turn(
                 "params": {
                     "threadId": "thread-fixture",
                     "turnId": "turn-fixture",
-                    "error": {"codexErrorInfo": retry_info},
+                    "error": {
+                        "codexErrorInfo": retry_info,
+                        "message": "private upstream request",
+                        "additionalDetails": "private upstream detail",
+                    },
                     "willRetry": True,
                 },
             },
@@ -641,8 +744,58 @@ def test_retry_and_unrelated_policy_events_do_not_terminate_current_turn(
         "Report progress.", on_event=lambda k, p: events.append((k, p))
     )
     assert result["message"] == "Recovered."
-    assert any(k == "agent.phase" and p["label"] == "Codex 正在重试" for k, p in events)
+    retry_events = [
+        p for k, p in events if k == "agent.phase" and p["label"] == "Codex 正在重试"
+    ]
+    assert retry_events == [{
+        "label": "Codex 正在重试", "method": "error",
+        "retry": {"codex_error_info": retry_info},
+    }]
+    assert "private upstream" not in json.dumps(events)
     assert sum(k == "answer.final" for k, p in events) == 1
+
+
+@pytest.mark.parametrize("variant", [
+    "httpConnectionFailed", "responseStreamConnectionFailed",
+    "responseStreamDisconnected", "responseTooManyFailedAttempts",
+])
+@pytest.mark.parametrize("status", [None, 429, 503])
+def test_retry_http_diagnostics_keep_only_typed_status(variant, status):
+    actual = chat_agent._retry_error_details({
+        "codexErrorInfo": {variant: {
+            "httpStatusCode": status, "message": "private upstream request",
+        }},
+        "message": "private upstream request", "additionalDetails": "private detail",
+    })
+    assert actual == {"retry": {"codex_error_info": {variant: {"httpStatusCode": status}}}}
+    assert "private" not in json.dumps(actual)
+
+
+@pytest.mark.parametrize("status", [True, False, -1, 65536, "503", 503.0, {}, []])
+def test_retry_http_diagnostics_do_not_coerce_untrusted_status(status):
+    assert chat_agent._retry_error_details({
+        "codexErrorInfo": {"httpConnectionFailed": {"httpStatusCode": status}},
+    }) == {"retry": {"codex_error_info": {"httpConnectionFailed": {}}}}
+
+
+@pytest.mark.parametrize("info", [
+    None, [], "private-future-error", {"private-future-error": {}},
+    {"responseStreamDisconnected": None},
+    {"responseStreamDisconnected": {}, "httpConnectionFailed": {}},
+    {"activeTurnNotSteerable": {"turnKind": []}},
+    {"activeTurnNotSteerable": {"turnKind": "private-future-kind"}},
+])
+def test_retry_unknown_shapes_keep_generic_phase_without_private_details(info):
+    assert chat_agent._retry_error_details({
+        "codexErrorInfo": info, "message": "private request", "additionalDetails": "private detail",
+    }) == {}
+
+
+@pytest.mark.parametrize("kind", ["review", "compact"])
+def test_retry_nonsteerable_details_use_existing_provider_turn_kind(kind):
+    assert chat_agent._retry_error_details({
+        "codexErrorInfo": {"activeTurnNotSteerable": {"turnKind": kind, "detail": "private"}},
+    }) == {"retry": {"codex_error_info": {"activeTurnNotSteerable": {"turnKind": kind}}}}
 
 
 def test_native_child_callback_is_scoped_to_owned_thread_and_turn(monkeypatch, tmp_path):

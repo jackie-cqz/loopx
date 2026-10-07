@@ -69,12 +69,6 @@ from .control_plane.todos.completion_transaction import (
     user_todo_completion_metadata_updates,
 )
 from .control_plane.todos import completion_validation as completion_validation_module
-from .control_plane.todos.line_update import (
-    apply_todo_update_to_lines,
-    link_generated_successor_todo_ids,
-    link_superseding_todo_id,
-    upsert_todo_metadata,
-)
 from .control_plane.todos.next_action_runtime import apply_added_todo_next_action, settle_completed_todo_next_action
 from .control_plane.todos.list_projection import (
     compact_agent_lane_todo_summary as compact_agent_lane_todo_summary,
@@ -135,11 +129,6 @@ from .control_plane.todos.handoff_mode import (
     resolve_todo_completion_handoff,
 )
 from .control_plane.coordination.local_authority_shadow_adapter import effective_runtime_root
-from .control_plane.coordination.runtime_shadow_writer_adapter import (
-    write_captured_todo_state,
-    begin_todo_runtime_shadow_capture,
-    settle_todo_runtime_shadow_capture,
-)
 from .control_plane.work_items.task_lease import (
     enter_terminal_todo_lease_fence,
     hold_task_lease_mutation_fence,
@@ -148,6 +137,21 @@ from .control_plane.work_items.task_lease import (
 
 
 ARCHIVE_COMPLETED_DEFAULT_MAX_ACTIVE_DONE = max(0, MAX_ACTIVE_DONE_TODOS_BEFORE_ARCHIVE - 2)
+
+
+def __getattr__(name: str) -> Any:
+    # Preserve explicit historic imports without loading the source writer for
+    # canonical CLI registration or provider-first lifecycle operations.
+    if name in (
+        "apply_todo_update_to_lines",
+        "link_generated_successor_todo_ids",
+        "link_superseding_todo_id",
+        "upsert_todo_metadata",
+    ):
+        from .control_plane.todos import line_update
+
+        return getattr(line_update, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def add_todo_to_lines(
@@ -186,6 +190,8 @@ def add_todo_to_lines(
     evidence: str | None = None,
     updated_at: str | None = None,
 ) -> dict[str, Any]:
+    from .control_plane.todos.line_update import upsert_todo_metadata
+
     if validation_command and validation_command_json:
         raise ValueError(
             "--validation-command and --validation-command-json are mutually "
@@ -634,6 +640,12 @@ def add_goal_todo(
         return canonical_create
     if operation_id is not None:
         raise ValueError("todo add --operation-id requires promoted canonical authority")
+    from .control_plane.coordination.runtime_shadow_writer_adapter import (
+        begin_todo_runtime_shadow_capture,
+        write_captured_todo_state,
+        settle_todo_runtime_shadow_capture,
+    )
+
     resolved_project, resolved_state_file = resolve_todo_state_path(
         registry_path=registry_path,
         goal_id=goal_id,
@@ -812,6 +824,7 @@ def update_goal_todo(
     required_capabilities: list[str] | None = None,
     target_capabilities: list[str] | None = None,
     explore_result_node_refs: list[str] | None = None,
+    append_explore_result_node_refs: list[str] | None = None,
     decision_scope: Any = None,
     required_decision_scopes: Any = None,
     claimed_by: str | None = None,
@@ -932,7 +945,7 @@ def update_goal_todo(
             validation_timeout_seconds, evidence, reason, task_class, action_kind,
             task_domain, task_repository, continuation_policy,
             required_write_scopes, required_capabilities, target_capabilities,
-            explore_result_node_refs, decision_scope, required_decision_scopes,
+            explore_result_node_refs, append_explore_result_node_refs, decision_scope, required_decision_scopes,
             bound_agent, blocks_agent, excluded_agents, unblocks_todo_id,
             successor_todo_ids, resume_when, no_followup, monitor_metadata,
         )
@@ -979,6 +992,7 @@ def update_goal_todo(
         required_capabilities=required_capabilities,
         target_capabilities=target_capabilities,
         explore_result_node_refs=explore_result_node_refs,
+        append_explore_result_node_refs=append_explore_result_node_refs,
         decision_scope=decision_scope,
         required_decision_scopes=required_decision_scopes,
         claimed_by=claimed_by, bound_agent=bound_agent, goal_bound=goal_bound,
@@ -1024,6 +1038,13 @@ def update_goal_todo(
         task_lease_idempotency_key is not None or task_lease_expected_version is not None
     ) and not (monitor_intent["observation"] is not None and status is None)):
         raise ValueError("update operation id and lease proof require a supported promoted update; no legacy write attempted")
+    from .control_plane.todos.line_update import apply_todo_update_to_lines
+    from .control_plane.coordination.runtime_shadow_writer_adapter import (
+        begin_todo_runtime_shadow_capture,
+        write_captured_todo_state,
+        settle_todo_runtime_shadow_capture,
+    )
+
     resolved_project, resolved_state_file = resolve_todo_state_path(
         registry_path=registry_path,
         goal_id=goal_id,
@@ -1120,7 +1141,7 @@ def update_goal_todo(
                 task_domain,
                 task_repository, continuation_policy, required_write_scopes,
                 required_capabilities, target_capabilities,
-                explore_result_node_refs, decision_scope,
+                explore_result_node_refs, append_explore_result_node_refs, decision_scope,
                 required_decision_scopes, blocks_agent, clear_blocks_agent,
                 bound_agent, goal_bound,
                 excluded_agents, clear_excluded_agents, global_gate,
@@ -1215,6 +1236,7 @@ def update_goal_todo(
             required_capabilities=required_capabilities,
             target_capabilities=target_capabilities,
             explore_result_node_refs=explore_result_node_refs,
+            append_explore_result_node_refs=append_explore_result_node_refs,
             decision_scope=decision_scope,
             required_decision_scopes=required_decision_scopes,
             claimed_by=effective_claimed_by,
@@ -1324,6 +1346,16 @@ def complete_goal_todo(
     state_file: Path | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
+    from .control_plane.todos.line_update import (
+        apply_todo_update_to_lines,
+        link_generated_successor_todo_ids,
+    )
+    from .control_plane.coordination.runtime_shadow_writer_adapter import (
+        begin_todo_runtime_shadow_capture,
+        write_captured_todo_state,
+        settle_todo_runtime_shadow_capture,
+    )
+
     shadow_runtime_root = effective_runtime_root(registry_path, runtime_root_arg)
     if next_task_repository and not next_agent_todo:
         raise ValueError("--next-task-repository requires --next-agent-todo")
@@ -1646,6 +1678,16 @@ def supersede_goal_todo(
     state_file: Path | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
+    from .control_plane.todos.line_update import (
+        apply_todo_update_to_lines,
+        link_superseding_todo_id,
+    )
+    from .control_plane.coordination.runtime_shadow_writer_adapter import (
+        begin_todo_runtime_shadow_capture,
+        write_captured_todo_state,
+        settle_todo_runtime_shadow_capture,
+    )
+
     if successor_todo_ids:
         raise ValueError("Existing-successor supersede requires promoted canonical Todo authority; migrate the Goal before retrying")
     shadow_runtime_root = effective_runtime_root(registry_path, runtime_root_arg)
@@ -1796,6 +1838,12 @@ def archive_completed_todos(
     state_file: Path | None = None,
     dry_run: bool = True,
 ) -> dict[str, Any]:
+    from .control_plane.coordination.runtime_shadow_writer_adapter import (
+        begin_todo_runtime_shadow_capture,
+        write_captured_todo_state,
+        settle_todo_runtime_shadow_capture,
+    )
+
     shadow_runtime_root = effective_runtime_root(registry_path, runtime_root_arg)
     if role not in TODO_SECTION_HEADINGS:
         raise ValueError("todo role must be one of: user, agent")

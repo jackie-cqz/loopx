@@ -332,6 +332,56 @@ final packet, including diagnostics. The historical `source_json_bytes` and
 `envelope_json_bytes` fields still count Unicode code points for v0 compatibility;
 do not use them as wire-byte measurements.
 
+### Capability refusal facts
+
+`boundary.capability_gate` carries the existing quota gate's `required` and
+`missing` arrays intact, including an empty `missing` array after admission.
+Earlier compact projection used only `required_capabilities` and
+`missing_capabilities`, which could report matching projection signatures while
+omitting the current refusal facts. Historical names are still carried when
+present in the supplied source; they are not synthesized or rewritten.
+
+These facts participate in the existing boundary signature. Newly built
+projections over current sources therefore have different hashes; saved
+signatures are not rewritten and this is not a cross-version hash-equivalence
+promise. Full quota output, admission, optional capability activation, claim,
+lease and mutation checks are unchanged. No capability is granted by reading
+these arrays. The default full heartbeat packet remains the source decision;
+compact/Turn hosts retain its reason for refusal without recomputing readiness.
+
+中文：短包原样保留现有能力门禁的 required/missing（包括合法空数组），历史字段
+只在源中存在时保留。新投影签名覆盖这些事实，不改写历史签名；完整包、准入、
+可选能力开关和 claim/lease 权限不变。读取缺失项不授予能力。
+
+### Optional memory participation
+
+The compact boundary retains the verified Goal/Agent Reward Memory automation
+facts in `boundary.capabilities.reward_memory`: `automatic_recall` and
+`automatic_ingest`. Unconfigured, disabled or unavailable bindings omit this
+projection. It carries neither private provider configuration nor memory content
+and grants no action authority. Existing action-signature coverage includes it.
+
+Codex CLI host requests use these facts together with the fresh runtime binding
+readback. Recall guidance is added only with enabled recall and actual context;
+the reflection instruction and output-schema field appear only with enabled
+ingest. A disabled or stale recall packet cannot activate either operation.
+Older/custom hosts may still return a reflection field: while ingest is off the
+adapter ignores it before validation and journaling, preserving ordinary work.
+When enabled, bounded reflection validation, exact independent attestation and
+post-settlement ingest retain their existing rules. Provider failure remains
+fail-open. The host adapter is Python IO transport over the existing capability
+resolver and TypeScript envelope owner, not a new enablement policy.
+
+This is a bounded shared-facts step. Heartbeat still has its existing full and
+compact rendering paths; it is not yet the same installed host journey. The
+remaining convergence work is tracked in the existing
+[effect-interpreter RFC](../../architecture/rfcs/agent-loop-effect-interpreter-v0.md#heartbeat-and-turn-envelope-convergence).
+
+中文：短包只携带已核验的 recall/ingest 参与事实；关闭、未配置或不可用时不加入。
+Codex CLI 据此及新鲜绑定读回装配指令和 schema，关闭 ingest 时忽略旧宿主返回的
+反思字段。权限、独立验证与结算规则不变。heartbeat 与 TurnEnvelope 的安装态统一
+仍待验证，不能把这一步当作完成。
+
 ### Budget warnings and allocation
 
 Oversize valid envelopes keep their normal Turn plan/controller route. They

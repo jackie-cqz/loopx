@@ -16,6 +16,7 @@ import { readReceiptLogSnapshot } from "./runtime/receipt_log_snapshot.ts";
 
 export const ROLLOUT_EVENT_SCHEMA_VERSION = "loopx_rollout_event_v0";
 export const HEARTBEAT_RECEIPT_EVENT_KIND = "quota_should_run";
+export type HeartbeatReceiptStatus = "fresh" | "missing" | "stale";
 
 /**
  * One parse of a Goal's rollout-event log.
@@ -101,7 +102,7 @@ export function strictGoalRolloutEvents(
   return snapshot?.events ?? [];
 }
 
-/** Filter heartbeat receipts from an already parsed Goal log snapshot. */
+/** Qualify heartbeat receipts without discarding diagnostic quota audit rows. */
 export function goalHeartbeatReceiptsFromSnapshot(
   snapshot: GoalRolloutEventSnapshot | null,
   goalId: string,
@@ -117,6 +118,9 @@ export function goalHeartbeatReceiptsFromSnapshot(
   return snapshot.events.filter((event) =>
     event.event_kind === HEARTBEAT_RECEIPT_EVENT_KIND &&
     event.goal_id === goalId &&
+    // A failed invocation without a real Turn identity is an audit, not a
+    // receipt that can grant host writeback or supersede an admitted Turn.
+    typeof event.run_id === "string" && event.run_id.trim().length > 0 &&
     (agentId === undefined || event.agent_id === agentId)
   );
 }
@@ -139,4 +143,27 @@ export async function readGoalHeartbeatReceipts(
     goalId,
     agentId,
   );
+}
+
+export async function heartbeatReceiptStatus(params: {
+  runtimeRoot: string;
+  goalId: string;
+  agentId: string;
+  turnInstanceId: string;
+}): Promise<HeartbeatReceiptStatus> {
+  const receipts = await readGoalHeartbeatReceipts(
+    params.runtimeRoot,
+    params.goalId,
+    params.agentId,
+  );
+  if (receipts === null) return "missing";
+  const firstMatch = receipts.findIndex(
+    (event) => event.run_id === params.turnInstanceId,
+  );
+  if (firstMatch < 0) return "missing";
+  return receipts.slice(firstMatch + 1).some(
+      (event) => event.run_id !== params.turnInstanceId,
+    )
+    ? "stale"
+    : "fresh";
 }

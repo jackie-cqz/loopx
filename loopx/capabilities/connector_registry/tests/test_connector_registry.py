@@ -3,7 +3,12 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from argparse import Namespace
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event, Lock
+
+import pytest
 
 from loopx.capabilities.connector_registry.core import (
     BUILTIN_CONNECTOR_CATALOG,
@@ -14,6 +19,7 @@ from loopx.capabilities.connector_registry.core import (
     register_connector,
     save_connector_registry,
 )
+from loopx.capabilities.connector_registry import cli as connector_cli
 
 
 def test_builtin_catalog_covers_layers(tmp_path: Path) -> None:
@@ -135,3 +141,68 @@ def test_cli_path_override_reads_the_registry_it_writes(tmp_path: Path) -> None:
         text=True, encoding="utf-8", errors="replace",
     )
     assert any(row["id"] == "probe-cli" for row in json.loads(ranked.stdout)["ranked"])
+
+
+@pytest.mark.parametrize("action", ("use", "register"))
+def test_concurrent_cli_mutations_preserve_both_updates(
+    tmp_path: Path, monkeypatch, action: str
+) -> None:
+    path = tmp_path / "connector-registry.json"
+    save_connector_registry(load_connector_registry(path), path)
+    real_load = connector_cli.load_connector_registry
+    arrivals_lock = Lock()
+    release_loads = Event()
+    arrivals = 0
+
+    def synchronized_load(registry_path=None):
+        state = real_load(registry_path)
+        nonlocal arrivals
+        with arrivals_lock:
+            arrivals += 1
+            if arrivals == 2:
+                release_loads.set()
+        # Load before waiting: without a mutation lock, both callers now hold
+        # the same pre-update state. With the lock, the second caller cannot
+        # load until the first caller has saved its update.
+        release_loads.wait(timeout=0.2)
+        return state
+
+    monkeypatch.setattr(connector_cli, "load_connector_registry", synchronized_load)
+
+    def mutate(index: int) -> int | None:
+        connector_id = "sina-daily" if action == "use" else f"race-{index}"
+        args = Namespace(
+            command="connector",
+            connector_action=action,
+            connector_id=connector_id,
+            fail=False,
+            ms=10,
+            note=None,
+            path=path,
+            name=None,
+            layer=None,
+            kind=None,
+            status="supported",
+            credential=None,
+            value_tier=None,
+            purpose=None,
+            blocker=None,
+        )
+        return connector_cli.handle_connector_command(
+            args,
+            output_format=lambda _args: "json",
+            print_payload=lambda *_args: None,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(mutate, range(2)))
+
+    assert results == [0, 0]
+    state = load_connector_registry(path)
+    if action == "use":
+        usage = state["usage"]["sina-daily"]
+        assert usage["count"] == 2
+        assert usage["ok"] == 2
+    else:
+        stored_ids = {row["id"] for row in state["connectors"]}
+        assert {"race-0", "race-1"} <= stored_ids

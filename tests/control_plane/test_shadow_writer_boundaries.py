@@ -113,16 +113,16 @@ def test_corrupt_management_state_blocks_before_transaction_body(tmp_path: Path)
 def test_atomic_state_writer_keeps_original_on_failed_replace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from loopx.control_plane.todos import active_state_editing
+    from loopx.control_plane.runtime import document_io
 
-    write = getattr(active_state_editing, "atomic_write_state_text", None)
+    write = getattr(document_io, "atomic_write_state_text", None)
     assert callable(write), "all state writers need the shared durable text primitive"
     state = tmp_path / "state.md"
     state.write_bytes(b"original\r\n")
     state.chmod(0o640)
     def fail_replace(*_args: object) -> None:
         raise OSError("replacement unavailable")
-    monkeypatch.setattr(active_state_editing.os, "replace", fail_replace)
+    monkeypatch.setattr(document_io.os, "replace", fail_replace)
     with pytest.raises(OSError, match="replacement unavailable"):
         write(state, "replacement\r\n")
     assert state.read_bytes() == b"original\r\n"
@@ -237,7 +237,7 @@ def test_real_process_kill_around_state_replace_preserves_complete_bytes(tmp_pat
     code = """
 import sys
 from pathlib import Path
-from loopx.control_plane.todos import active_state_editing as editing
+from loopx.control_plane.runtime import document_io as editing
 original = editing.os.replace
 def replace(source, target):
     if sys.argv[2] == 'after': original(source, target)
@@ -330,13 +330,13 @@ def test_real_writer_commits_before_a_later_fence_is_published(tmp_path: Path, o
     registry, state, root = fixture(tmp_path)
     writer_code = """
 import sys
-from loopx.control_plane.todos import active_state_editing
-original = active_state_editing.atomic_write_state_text
+from loopx.control_plane.runtime import document_io
+original = document_io.atomic_write_state_text
 def paused(*args):
     print('primary-write-cut', flush=True)
     sys.stdin.readline()
     return original(*args)
-active_state_editing.atomic_write_state_text = paused
+document_io.atomic_write_state_text = paused
 from loopx.entrypoint import main
 raise SystemExit(main(sys.argv[1:]))
 """
@@ -384,7 +384,7 @@ raise SystemExit(main(sys.argv[1:]))
 
 
 def test_failed_primary_replace_never_marks_shadow_committed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from loopx.control_plane.todos import active_state_editing
+    from loopx.control_plane.runtime import document_io
     registry, state, root = fixture(tmp_path)
     value = json.loads(registry.read_text())
     value["goals"][0]["coordination"]["runtime_shadow"] = {
@@ -392,12 +392,12 @@ def test_failed_primary_replace_never_marks_shadow_committed(tmp_path: Path, mon
     registry.write_text(json.dumps(value))
     cli(registry, "coordination-shadow", "bootstrap", "--goal-id", GOAL, "--execute")
     before = state.read_bytes()
-    original = active_state_editing.os.replace
+    original = document_io.os.replace
     def fail_primary(source: object, target: object) -> None:
         if Path(str(target)) == state:
             raise OSError("primary replace refused")
         original(source, target)
-    monkeypatch.setattr(active_state_editing.os, "replace", fail_primary)
+    monkeypatch.setattr(document_io.os, "replace", fail_primary)
     with pytest.raises(OSError, match="primary replace refused"):
         add_goal_todo(
             registry_path=registry, goal_id=GOAL, role="agent",
@@ -490,6 +490,51 @@ def test_prose_guard_ignores_resume_evaluation_clock(
         original_text=original,
         planned_text=planned,
     )
+
+
+
+@pytest.mark.parametrize("original_value,planned_value", [(True, 1), (False, 0)])
+def test_prose_guard_preserves_json_scalar_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    original_value: bool, planned_value: int,
+) -> None:
+    """A full source projection must retain JSON types even if Python equates them."""
+    from loopx.control_plane.coordination import local_authority_shadow_adapter as adapter
+    from loopx.control_plane.coordination.local_authority_shadow_projection import (
+        todo_partition_projection,
+    )
+    from loopx.control_plane.coordination.runtime_shadow_writer_adapter import (
+        ActiveStateAuthorityMutationError, require_prose_state_write_allowed,
+    )
+
+    registry, state, root = fixture(tmp_path)
+    add_goal_todo(registry_path=registry, goal_id=GOAL, role="agent", text="Retain result facts.")
+    original = state.read_text(encoding="utf-8")
+    planned = original + "\nA narrative observation.\n"
+    real_projector = adapter.todo_partition_projector
+
+    def source_projector(*args, **kwargs):
+        project = real_projector(*args, **kwargs)
+
+        def project_result(text):
+            projection = project(text)
+            # Exercise the complete-record adapter contract through the real TS
+            # assembler. This injected result fact models an adapter output,
+            # not an assertion that the current Markdown codec emits this shape.
+            projection["todos"][0]["completion_result"] = {
+                "facts": [{"value": original_value if text == original else planned_value}],
+            }
+            return todo_partition_projection(**projection)
+
+        return project_result
+
+    monkeypatch.setattr(adapter, "todo_partition_projector", source_projector)
+    with pytest.raises(ActiveStateAuthorityMutationError, match="would change canonical"):
+        require_prose_state_write_allowed(
+            registry_path=registry, runtime_root=root, goal_id=GOAL,
+            state_path=state, original_text=original, planned_text=planned,
+        )
+    assert state.read_text(encoding="utf-8") == original
 
 
 def test_prose_only_reward_holds_before_index_append_during_maintenance(tmp_path: Path) -> None:

@@ -132,6 +132,7 @@ def turn_journal_observed_capabilities(
     runtime_root: Path,
     *,
     settlement_identity: Mapping[str, Any],
+    goal_ref: Mapping[str, Any] | None = None,
 ) -> list[str] | None:
     """Read exact terminal Turn evidence through the native journal owner.
 
@@ -139,11 +140,14 @@ def turn_journal_observed_capabilities(
     capabilities. Historical evidence never grants current execution authority.
     """
 
+    request = {
+        "runtime_root": str(runtime_root.resolve()),
+        "settlement_identity": dict(settlement_identity),
+    }
+    if goal_ref is not None:
+        request["goal_ref"] = dict(goal_ref)
     try:
-        payload = effect_runtime_result("turn_journal.observed_capabilities", {
-            "runtime_root": str(runtime_root.resolve()),
-            "settlement_identity": dict(settlement_identity),
-        })
+        payload = effect_runtime_result("turn_journal.observed_capabilities", request)
     except (RuntimeError, ValueError):
         return None
     if not isinstance(payload, dict) or set(payload) != {"observed_capabilities"}:

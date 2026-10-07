@@ -59,6 +59,11 @@ def _review(*, area="product_runtime"):
                 "decision": "not_applicable",
                 "reason": "Local formatting fixture; no protocol, adapter or persisted format change.",
             }
+        if key == "change_proportionality":
+            row["architecture_assessment"] = {
+                "decision": "not_applicable",
+                "reason": "Inspected local formatter; no mechanism ownership, default or phase changes.",
+            }
         if key == "semantic_alignment":
             row.update(
                 checked_scope="Changed helper and its callers; no shared state writes.",

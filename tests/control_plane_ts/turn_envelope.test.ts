@@ -73,6 +73,61 @@ const protocolActionFields = {
   agent_action: "advance one bounded segment",
 };
 
+test("capability facts retain exact current and historical source fields", () => {
+  for (const fields of [
+    {required: ["network", "filesystem_write"], missing: ["network"]},
+    {required: ["network"], missing: []},
+    {required_capabilities: ["network"], missing_capabilities: ["network"]},
+  ]) {
+    const source = payload();
+    source.capability_gate = {action: "repair_bridge", reason: "Unavailable capability",
+      ...fields, runnable_candidates: [{private_detail: "not in compact context"}], available: ["shell"]};
+    const before = structuredClone(source);
+    const envelope = buildTurnEnvelope({payload: source, protocol_action_fields: protocolActionFields,
+      scheduler_execution_args: ""});
+    assert.deepEqual((envelope.boundary as JsonObject).capability_gate,
+      {action: "repair_bridge", reason: "Unavailable capability", ...fields});
+    assert.deepEqual(source, before);
+    assert.deepEqual(quotaActionSignatureDocument(source, protocolActionFields),
+      turnEnvelopeActionSignatureDocument(envelope));
+    const changed = structuredClone(envelope);
+    ((changed.boundary as JsonObject).capability_gate as JsonObject)[Object.keys(fields)[1]] = ["different"];
+    assert.notDeepEqual(turnEnvelopeActionSignatureDocument(changed), turnEnvelopeActionSignatureDocument(envelope));
+  }
+});
+
+test("optional memory participation is compact, verified and signed", () => {
+  const plain = payload();
+  const build = (source: JsonObject) => buildTurnEnvelope({payload: source,
+    protocol_action_fields: protocolActionFields, scheduler_execution_args: ""});
+  const ordinary = build(plain);
+  const memory = {enabled: true, configured_for_agent: true, experiment_available: true,
+    automatic_recall: true, automatic_ingest: false, config_path: "private-config",
+    enablement_receipt: {diagnostic: "not-host-context"}};
+  for (const flag of ["enabled", "configured_for_agent", "experiment_available"]) {
+    const source = payload();
+    (source.goal_boundary as JsonObject).capabilities = {reward_memory: {...memory, [flag]: false}};
+    assert.deepEqual(build(source).boundary, ordinary.boundary);
+  }
+  for (const [recall, ingest] of [[true, false], [false, true], [true, true], [false, false]]) {
+    const source = payload();
+    (source.goal_boundary as JsonObject).capabilities = {reward_memory: {...memory,
+      automatic_recall: recall, automatic_ingest: ingest}};
+    const envelope = build(source);
+    const projected = (envelope.boundary as JsonObject).capabilities;
+    assert.deepEqual(projected, recall || ingest ? {reward_memory: {
+      automatic_recall: recall, automatic_ingest: ingest,
+    }} : undefined);
+    assert.deepEqual(quotaActionSignatureDocument(source, protocolActionFields),
+      turnEnvelopeActionSignatureDocument(envelope));
+    if (recall || ingest) {
+      const signed = JSON.parse(JSON.stringify(turnEnvelopeActionSignatureDocument(envelope)));
+      ((projected as JsonObject).reward_memory as JsonObject).automatic_ingest = !ingest;
+      assert.notDeepEqual(turnEnvelopeActionSignatureDocument(envelope), signed);
+    }
+  }
+});
+
 test("settlement-only replans preserve owed commands and do not demand another outcome", () => {
   const prefix = "loopx --runtime-root /" + "long-path/".repeat(50);
   for (const commands of [
@@ -223,7 +278,7 @@ test("pending capability action outranks stale replan commands and remains signe
   const envelope = buildTurnEnvelope({payload: source, protocol_action_fields: protocolActionFields, scheduler_execution_args: ""});
   assert.equal(envelope.replan_action_packet, null);
   assert.deepEqual((envelope.writeback as JsonObject).next_cli_actions, [command]);
-  const signed = turnEnvelopeActionSignatureDocument(envelope);
+  const signed = JSON.parse(JSON.stringify(turnEnvelopeActionSignatureDocument(envelope)));
   assert.deepEqual((signed.action as JsonObject).capability_intent, source.pending_capability_intent);
   (source.pending_capability_intent as JsonObject).command = "untrusted replacement";
   assert.throws(() => buildTurnEnvelope({payload: source, protocol_action_fields: protocolActionFields,

@@ -29,6 +29,7 @@ from .peer_context_observation import require_parent_context_access
 from .goal_instance_scope import (
     collaboration_goal_scope,
     decide_collaboration_lifecycle,
+    goal_accepts_collaboration,
 )
 from ...agent_registry import registered_agent_ids_for_goal
 from ...thread_agent_binding import resolve_thread_agent_binding
@@ -57,7 +58,7 @@ def _goal(registry, goal_id, *agents, require_active=False):
     )
     if not goal or any(a not in registered_agent_ids_for_goal(goal) for a in agents):
         raise ValueError("peer request requires registered Agents of the same Goal")
-    if require_active and goal.get("status") in {"stopped", "archived"}:
+    if require_active and not goal_accepts_collaboration(goal):
         raise ValueError("peer request Goal is stopped or archived")
     return goal
 

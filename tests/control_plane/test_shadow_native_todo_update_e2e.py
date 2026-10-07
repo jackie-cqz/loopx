@@ -7,6 +7,7 @@ these tests do not claim that shadow bootstrap can promote a canonical provider.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import json
@@ -14,6 +15,7 @@ from pathlib import Path
 import select
 import subprocess
 import sys
+import threading
 import time
 
 import pytest
@@ -31,10 +33,17 @@ from loopx.control_plane.coordination.shadow_management import (
     shadow_management_state_path,
 )
 from loopx.control_plane.effect_runtime import effect_runtime_result
+from loopx.control_plane.goals import source_session_recreation
+from loopx.control_plane.goals.source_session_recreation import RecreateGoalRequest
+from loopx.control_plane.projects.registry_codec import (
+    load_project_registry,
+    source_session_registry_transaction,
+)
 from loopx.control_plane.todos import provider_update
 
 REPO = Path(__file__).resolve().parents[2]
 GOAL, TODO = "goal-update", "todo_update_probe"
+INSTANCE_A = "ginst_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 pytestmark = pytest.mark.stage2c_e2e
 
 
@@ -65,15 +74,30 @@ def workspace(tmp_path: Path, request: pytest.FixtureRequest) -> Workspace:
     state = tmp_path / "ACTIVE_GOAL_STATE.md"
     state.write_text("# Canonical display is not a transaction input.\n", encoding="utf-8")
     registry = tmp_path / "registry.json"
-    registry.write_text(json.dumps({"schema_version": 1, "common_runtime_root": str(runtime),
+    source_profile = request.param == "source_sqlite"
+    registry_payload = {"schema_version": "0.2" if source_profile else 1,
+        "common_runtime_root": str(runtime),
         "goals": [{"id": GOAL, "repo": str(tmp_path), "state_file": state.name,
-                   "coordination": {"registered_agents": ["agent-a", "agent-b"]}}]}), encoding="utf-8")
+                   "coordination": {"registered_agents": ["agent-a", "agent-b"]},
+                   **({"goal_instance_id": INSTANCE_A, "status": "active",
+                       "execution_authority": False} if source_profile else {})}],
+        **({"registry_role": "project-local", "profile_id": "source_session_v1",
+            "projects": [], "session_bindings": [], "session_receipts": [],
+            "lifetime_receipts": [], "retired_goal_instances": []} if source_profile else {})}
+    if source_profile:
+        with source_session_registry_transaction(
+            registry, operation="canonical_todo_recreation_fixture",
+            create=lambda: registry_payload,
+        ) as transaction:
+            transaction.commit(registry_payload)
+    else:
+        registry.write_text(json.dumps(registry_payload), encoding="utf-8")
     todo = {"schema_version": TODO_DOMAIN_ITEM_SCHEMA_VERSION, "todo_id": TODO,
             "text": "Original provider text", "role": "agent", "status": "open", "done": False,
             "archive_state": "active", "claimed_by": "agent-a", "note": "Keep the note",
             "required_capabilities": ["code_review"], "excluded_agents": ["agent-b"],
             "evidence": "Complete provider metadata"}
-    if request.param == "native":
+    if request.param in {"native", "source_sqlite"}:
         projection = {"goal_id": GOAL, "handoff_mode": "soft_claim", "todos": [todo], "leases": [],
             "todo_read_model": {"schema_version": TODO_DOMAIN_READ_RECORD_SCHEMA_VERSION, "todo_count": 1,
                 "records_sha256": hashlib.sha256(canonical_bytes([todo])).hexdigest(),
@@ -81,7 +105,10 @@ def workspace(tmp_path: Path, request: pytest.FixtureRequest) -> Workspace:
     else:
         todo.update(schema_version="todo_item_v0", index=7, source_section="Agent Todo")
         projection = build_todo_runtime_shadow_projection(goal_id=GOAL, todos=[todo], handoff_mode="soft_claim")
-    initialize_canonical_authority(runtime, GOAL, projection, state_path=state)
+    initialize_canonical_authority(
+        runtime, GOAL, projection, state_path=state,
+        provider="sqlite" if source_profile else "file",
+    )
     state.unlink()  # Neither update route may require or recreate Markdown.
     return Workspace(runtime, registry, state, projection)
 
@@ -93,10 +120,10 @@ import {once} from 'node:events';
 import {dirname, join} from 'node:path';
 const input = JSON.parse(process.argv[1]);
 const base = new URL(input.module_base);
-const {FileAuthorityStore} = await import(new URL('file_authority_store.ts', base));
+const {openLocalAuthorityStore} = await import(new URL('local_authority_provider.ts', base));
 const {updateLocalCoordinationTodo} = await import(new URL('local_authority_runtime.ts', base));
 const management = await import(new URL('shadow_management.ts', base));
-const store = new FileAuthorityStore(join(input.request.runtime_root, 'authority', 'file-v0'), input.request.goal_id, {existingOnly:true});
+const store = await openLocalAuthorityStore(input.request.runtime_root, input.request.goal_id);
 const barrier = async (phase) => {process.stdout.write('BARRIER ' + phase + '\n'); await once(process.stdin, 'data');};
 if (input.mode.endsWith('_wait')) {
   const actualOpen = fs.promises.open;
@@ -141,7 +168,8 @@ process.stdout.write(JSON.stringify(result) + '\n');
 
 def node_command(mode: str, request: dict, **options: object) -> list[str]:
     base = (REPO / "loopx/control_plane/coordination").as_uri() + "/"
-    return ["node", "--no-warnings", "--experimental-strip-types", "--input-type=module", "-e", NODE,
+    return ["node", "--no-warnings", "--experimental-sqlite", "--experimental-strip-types",
+            "--input-type=module", "-e", NODE,
             json.dumps({"mode": mode, "request": request, "module_base": base, **options})]
 
 
@@ -351,3 +379,82 @@ def test_native_update_retains_maintenance_lock_through_actual_commit(workspace:
         stop(writer)
         if manager is not None:
             stop(manager)
+
+
+@pytest.mark.parametrize("workspace", ["source_sqlite"], indirect=True)
+def test_goal_recreation_waits_for_an_admitted_canonical_update(
+    workspace: Workspace,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry_source = {
+        "path": str(workspace.registry.resolve()),
+        "sha256": hashlib.sha256(workspace.registry.read_bytes()).hexdigest(),
+    }
+    request = workspace.request(
+        schema_version="loopx_local_coordination_todo_update_request_v2",
+        registry_source=registry_source,
+        lifecycle_grants=[],
+        authority_reason=None,
+    )
+    writer = start(node_command("update_paused", request))
+    publish_started = threading.Event()
+    recreation_finished = threading.Event()
+    recreated: list[dict] = []
+    recreation_errors: list[BaseException] = []
+    actual_lock = source_session_recreation.exclusive_cross_runtime_file_lock
+
+    @contextmanager
+    def observed_lock(path: Path, **options: object):
+        if options.get("operation") == "source_session_goal_lifetime_publish":
+            publish_started.set()
+        with actual_lock(path, **options):
+            yield
+
+    monkeypatch.setattr(
+        source_session_recreation,
+        "exclusive_cross_runtime_file_lock",
+        observed_lock,
+    )
+
+    def recreate() -> None:
+        try:
+            recreated.append(source_session_recreation.recreate_goal_instance(
+                RecreateGoalRequest(
+                    registry_path=workspace.registry,
+                    goal_id=GOAL,
+                    goal_instance_id=INSTANCE_A,
+                    operation_id="recreate-during-canonical-update",
+                )
+            ))
+        except BaseException as error:
+            recreation_errors.append(error)
+        finally:
+            recreation_finished.set()
+
+    thread = threading.Thread(target=recreate)
+    try:
+        expect_barrier(writer, "commit")
+        thread.start()
+        assert publish_started.wait(timeout=5), "Goal recreation did not reach publication"
+        assert not recreation_finished.wait(timeout=0.2), (
+            "Goal B published while Goal A's admitted canonical update was paused "
+            "before provider commit"
+        )
+        output, error = writer.communicate("continue\n", timeout=20)
+        assert writer.returncode == 0, output + error
+        update = json.loads(output)
+        assert update["status"] == "applied", update
+        thread.join(timeout=10)
+        assert not thread.is_alive()
+        assert recreation_errors == []
+        assert recreated and recreated[0]["ok"] is True
+        registry = load_project_registry(workspace.registry)
+        assert registry["goals"][0]["goal_instance_id"] == (
+            recreated[0]["goal_ref"]["goal_instance_id"]
+        )
+        assert inspect(workspace)["head"]["head"]["todos"][0]["text"] == (
+            "Updated through native RPC"
+        )
+    finally:
+        stop(writer)
+        thread.join(timeout=10)

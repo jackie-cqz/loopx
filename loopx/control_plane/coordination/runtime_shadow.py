@@ -205,31 +205,6 @@ def resolve_coordination_runtime_shadow_config(
 
 RuntimeInvoker = Callable[..., object]
 
-def load_task_lease_runtime_shadow_records(
-    *,
-    runtime_root: Path,
-    goal_id: str,
-) -> list[dict[str, object]]:
-    """Read complete legacy lease records for a source snapshot."""
-
-    lease_directory = runtime_root / "goals" / goal_id / "task-leases"
-    if not lease_directory.exists():
-        return []
-    records: list[dict[str, object]] = []
-    for path in sorted(lease_directory.glob("*.json")):
-        if re.fullmatch(r"[A-Za-z0-9_.-]+\.json", path.name) is None:
-            continue
-        value = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(value, Mapping):
-            raise ValueError(f"task lease is not an object: {path.name}")
-        todo_id = value.get("todo_id")
-        if not isinstance(todo_id, str) or not todo_id:
-            raise ValueError(f"task lease omits todo_id: {path.name}")
-        from .local_authority_shadow_projection import compact_lease
-        records.append(compact_lease(value, goal_id=goal_id, file_stem=path.stem))
-    records.sort(key=lambda item: str(item["todo_id"]))
-    return records
-
 
 def build_todo_runtime_shadow_projection(
     *,

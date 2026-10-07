@@ -72,7 +72,10 @@ from .control_plane.collaboration.peers import (
     request,
     require_operation_id,
 )
-from .presentation.answer_instruction import conversation_answer_instruction
+from .presentation.answer_instruction import (
+    collaboration_answer_instruction,
+    conversation_answer_instruction,
+)
 
 
 _PINNED_MODULE_LAUNCHER = (
@@ -257,7 +260,7 @@ def register_collaboration_tools(server: FastMCP, root: Path, registry: Path, go
         Follow next_cursor for later requests. Omit cursor to start a fresh scan.
         Pages are live; reading all pages does not complete outstanding work.
         """
-        return read_inbox(
+        result = read_inbox(
             root,
             registry,
             goal_id,
@@ -266,6 +269,8 @@ def register_collaboration_tools(server: FastMCP, root: Path, registry: Path, go
             cursor=cursor,
             caller_goal_ref=caller_goal_ref,
         )
+        result["instruction"] += " " + collaboration_answer_instruction()
+        return result
 
     @server.tool()
     def assess_request(

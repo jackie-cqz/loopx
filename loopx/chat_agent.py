@@ -101,6 +101,50 @@ def _approval_gate(summary: str) -> dict[str, str]:
     }
 
 
+def _retry_error_details(error: Any) -> dict[str, Any]:
+    """Keep the app-server v2 discriminator, not its private error prose.
+
+    These are provider protocol values, not Core failure classifications. An
+    unknown shape keeps the existing generic retry phase and retry behavior.
+    """
+    info = error.get("codexErrorInfo") if isinstance(error, dict) else None
+    if isinstance(info, str):
+        if info not in {
+            "contextWindowExceeded", "sessionBudgetExceeded", "usageLimitExceeded",
+            "rateLimitExceeded", "flexUnavailable", "serverOverloaded", "cyberPolicy",
+            "misalignmentPolicyViolation", "tooManyDenials", "internalServerError",
+            "unauthorized", "badRequest", "threadRollbackFailed", "sandboxError", "other",
+        }:
+            return {}
+        safe_info: Any = info
+    elif isinstance(info, dict) and len(info) == 1:
+        variant, detail = next(iter(info.items()))
+        if not isinstance(detail, dict):
+            return {}
+        if variant in {
+            "httpConnectionFailed", "responseStreamConnectionFailed",
+            "responseStreamDisconnected", "responseTooManyFailedAttempts",
+        }:
+            safe_detail: dict[str, Any] = {}
+            status = detail.get("httpStatusCode")
+            if "httpStatusCode" in detail and (
+                status is None or (type(status) is int and 0 <= status <= 65535)
+            ):
+                safe_detail["httpStatusCode"] = status
+        elif (
+            variant == "activeTurnNotSteerable"
+            and isinstance(detail.get("turnKind"), str)
+            and detail["turnKind"] in {"review", "compact"}
+        ):
+            safe_detail = {"turnKind": detail["turnKind"]}
+        else:
+            return {}
+        safe_info = {variant: safe_detail}
+    else:
+        return {}
+    return {"retry": {"codex_error_info": safe_info}}
+
+
 def _terminal_turn_error(error: Any, fallback: str) -> CodexChatAgentError:
     """Project only the app-server's typed error, never its arbitrary prose."""
     info = error.get("codexErrorInfo") if isinstance(error, dict) else None
@@ -647,6 +691,29 @@ class CodexChatAgentSession:
                 request_id=1,
             )
             session._notify("initialized", {})
+            read_project_defaults = project_context is not None and bool(resume_thread_id) and (
+                model is None or reasoning_effort is None
+            )
+            if read_project_defaults:
+                # Resume otherwise inherits the old thread's model/effort, even
+                # when the owner's effective workspace configuration has changed.
+                # Let Codex resolve trusted layers; never copy sandbox or approval
+                # settings from project files over the existing Core grant.
+                config_result = session._request(
+                    "config/read", {"cwd": str(root), "includeLayers": False},
+                    request_id=3,
+                )
+                effective = config_result.get("config", {})
+                if not isinstance(effective, dict):
+                    raise session._runtime_error("Codex returned an invalid project configuration.")
+                selected = {**effective, **(host_config or {})}
+                if model is None:
+                    model = selected.get("model")
+                if reasoning_effort is None:
+                    reasoning_effort = selected.get("model_reasoning_effort")
+                if any(value is not None and (not isinstance(value, str) or not value.strip())
+                       for value in (model, reasoning_effort)):
+                    raise session._runtime_error("Codex returned invalid project model settings.")
             thread_result = session._request(
                 "thread/resume" if resume_thread_id else "thread/start",
                 {
@@ -683,14 +750,14 @@ class CodexChatAgentSession:
             )
             if model and thread_result.get("model") not in {None, model}:
                 raise session._runtime_error(
-                    "Codex did not apply the requested manager model."
+                    "Codex did not apply the requested conversation model."
                 )
             if reasoning_effort and thread_result.get("reasoningEffort") not in {
                 None,
                 reasoning_effort,
             }:
                 raise session._runtime_error(
-                    "Codex did not apply the requested manager reasoning effort."
+                    "Codex did not apply the requested conversation reasoning effort."
                 )
             session.model = thread_result.get("model") or model
             session.reasoning_effort = thread_result.get("reasoningEffort") or reasoning_effort
@@ -707,7 +774,7 @@ class CodexChatAgentSession:
             # that public-safe context in each Turn prompt. Codex Goal mode is reserved
             # for autonomous execution; enabling it here causes conversational messages
             # to be treated as continuation ticks instead of the current user task.
-            session.next_request_id = 3
+            session.next_request_id = 4 if read_project_defaults else 3
             return session
         except _LegacyModelCatalogSchemaError as exc:
             session.close()
@@ -1189,7 +1256,11 @@ class CodexChatAgentSession:
                     if on_event:
                         on_event(
                             "agent.phase",
-                            {"label": "Codex 正在重试", "method": method},
+                            {
+                                "label": "Codex 正在重试",
+                                "method": method,
+                                **_retry_error_details(params.get("error")),
+                            },
                         )
                     continue
                 raise _terminal_turn_error(

@@ -64,6 +64,33 @@ def _journal(effect_id: str) -> dict[str, object]:
     }
 
 
+@pytest.mark.parametrize("occupied_with_directory", [True, False])
+def test_read_info_distinguishes_directory_from_unreadable_runtime_metadata(
+    tmp_path: Path,
+    monkeypatch,
+    occupied_with_directory: bool,
+) -> None:
+    info_path = tmp_path / "runtime-info"
+    if occupied_with_directory:
+        info_path.mkdir()
+    else:
+        info_path.write_text("{}", encoding="utf-8")
+
+    original_read_text = Path.read_text
+
+    def deny_read(path: Path, *args, **kwargs):
+        if path == info_path:
+            raise PermissionError("synthetic denied read")
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", deny_read)
+    if occupied_with_directory:
+        assert effect_runtime._read_info(info_path, fingerprint="fixture") is None
+    else:
+        with pytest.raises(effect_runtime.EffectRuntimeHostPermissionError):
+            effect_runtime._read_info(info_path, fingerprint="fixture")
+
+
 def _raw_runtime_response(
     info: dict[str, object],
     payload: bytes,
@@ -931,19 +958,32 @@ def test_runtime_ready_budget_starts_after_start_lock_acquisition(
 
 
 @pytest.mark.parametrize(
-    ("failure", "expected_code"),
+    ("failure", "simulate_permission_denied", "expected_code"),
     [
         # Windows rejects replacement of an occupied directory with EPERM/EACCES;
         # preserve that platform's shared permission diagnostic rather than
         # requiring the Unix EISDIR classification.
-        ("directory", "io_permission_denied" if os.name == "nt" else "io_is_directory"),
-        ("live_lock", "mutation_lock_timeout"),
+        (
+            "directory",
+            False,
+            "io_permission_denied" if os.name == "nt" else "io_is_directory",
+        ),
+        # Exercise the Windows Python open-directory error on every platform
+        # through the production runtime request path, retaining the running
+        # platform's native filesystem diagnostic from the managed server.
+        (
+            "directory",
+            True,
+            "io_permission_denied" if os.name == "nt" else "io_is_directory",
+        ),
+        ("live_lock", False, "mutation_lock_timeout"),
     ],
 )
 def test_locator_publication_failure_surfaces_safe_typed_startup_diagnostic(
     tmp_path: Path,
     monkeypatch,
     failure: str,
+    simulate_permission_denied: bool,
     expected_code: str,
 ) -> None:
     marker = "private-locator-fixture"
@@ -957,6 +997,16 @@ def test_locator_publication_failure_surfaces_safe_typed_startup_diagnostic(
         info_path.mkdir()
     else:
         lock_path.write_text(json.dumps(lock_owner), encoding="utf-8")
+
+    if simulate_permission_denied:
+        original_read_text = Path.read_text
+
+        def deny_directory_read(path: Path, *args, **kwargs):
+            if path == info_path:
+                raise PermissionError("synthetic denied directory open")
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", deny_directory_read)
 
     captures: list[bytes] = []
     read_stderr = effect_runtime._read_startup_stderr

@@ -2486,3 +2486,24 @@ export async function updateZCodeGoal(goalId: string, agentId: string, action: E
   }
   return result;
 }
+
+// Display validation only; finding status semantics remain owned by Explore.
+const exploreResultPageSchema = z.object({
+  ok: z.literal(true), goal_id: z.string(), total: z.number().int().nonnegative(),
+  next_cursor: z.string().nullable(),
+  items: z.array(z.object({
+    finding_id: z.string(), finding: z.string(), summary: z.string(), status: z.string(),
+    node_id: z.string(), question: z.string(), scope: z.string(), agent_id: z.string(),
+    evidence_refs: z.array(z.string()), last_updated_at: z.string(),
+    linked_todos: z.array(z.object({
+      todo_id: z.string(), text: z.string(), status: z.string(), claimed_by: z.string(),
+    })),
+  })),
+});
+export type ExploreResultPage = z.infer<typeof exploreResultPageSchema>;
+export async function fetchExploreResults(goalId: string, cursor?: string) {
+  const query = new URLSearchParams({goal_id: goalId, ...(cursor ? {cursor} : {})});
+  const page = exploreResultPageSchema.parse(await requestJson<unknown>(`/api/chat/explore-results?${query}`));
+  if (page.goal_id !== goalId) throw new Error("Explore result Goal mismatch");
+  return page;
+}
