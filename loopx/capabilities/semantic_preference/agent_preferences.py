@@ -81,6 +81,9 @@ def extend_turn_start_dispatch(
         hook_id="semantic_preference.agent_context", capability_id="semantic-preference",
         requested_read_scope=("owner_private_agent_preferences",), requested_write_scope=(),
         producer=produce,
+        context_reader=lambda: agent_preferences(
+            registry_path=registry_path, runtime_root=runtime_root,
+            goal_id=goal_id, agent_id=agent_id, action="read"),
         required_read={"kind": "agent_preferences", "command": command,
             "reason": "Read current preferences and retirements; apply explicit user corrections before acting. Memory is not permission.",
             "ordering": "before_work"},
@@ -92,7 +95,9 @@ def extend_turn_start_dispatch(
         # unreadable store/producer error is not absence and remains visible.
         return dispatch
     result = dict(dispatch or {})
-    for key in ("results", "required_reads", "failures"):
+    for key in ("results", "required_reads", "failures", "contexts"):
+        if key == "contexts" and not extra.get(key):
+            continue
         result[key] = list(result.get(key) or []) + list(extra.get(key) or [])
     for key in ("registered_count", "invoked_count"):
         result[key] = int(result.get(key) or 0) + int(extra.get(key) or 0)
@@ -138,5 +143,5 @@ def handle_agent_preferences(args, *, registry_path, runtime_root_arg):
 
 def render_agent_preferences(payload):
     import json
-    # This is an explicitly owner-local read. Generic quota/status never emits it.
+    # The same owner-local read is used by the scoped turn context hook.
     return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"

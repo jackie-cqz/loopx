@@ -280,7 +280,7 @@ def _prompt(request: Mapping[str, Any]) -> str:
     )
     instructions = [
         "Execute exactly one bounded LoopX Turn in the current workspace.",
-        "Use the TurnEnvelope as the source of truth. Perform work only when its contract allows it.",
+        "Use the TurnEnvelope as the source of truth. Read work_context and remaining required_reads before primary_action; do not repeat fulfilled reads; perform work only when its contract allows it. The selected Todo summary is not its full requirements, and completing that work does not prove Goal completion.",
         "Do not write LoopX state, spend quota, or apply scheduler changes; the adapter owns those effects.",
         "Return only the schema-constrained result. For validated_progress, repair_required, or replan_required, fill every material field with public-safe evidence.",
         "For those material results, set path_delta_mode=material_replan only when this Turn changes a prior assumption, route, scope, acceptance rule, or stops prior work; then provide a complete bounded agent vision packet with goal_path_delta_v0 in agent_vision_json and leave vision_unchanged_reason empty.",

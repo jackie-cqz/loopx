@@ -352,7 +352,7 @@ def test_legacy_planning_does_not_grant_existing_sink_publication(tmp_path):
     assert observed == [False]
 
 
-def test_real_quota_packet_exposes_replayable_read_without_admitting_unhealthy_goal(
+def test_real_quota_delivers_replayable_context_without_admitting_unhealthy_goal(
     tmp_path,
 ):
     import subprocess
@@ -385,16 +385,26 @@ def test_real_quota_packet_exposes_replayable_read_without_admitting_unhealthy_g
     )
     packet = json.loads(packet_run.stdout)
     assert packet["ok"] is False  # This fixture deliberately has no healthy adapter.
-    required = next(
-        r for r in packet["required_reads"] if r["kind"] == "explore_turn_context"
+    channel = packet["interaction_contract"]["agent_channel"]
+    assert packet["should_run"] is False
+    assert channel["delivery_allowed"] is False
+    assert "required_reads" not in packet
+    source = next(
+        r for r in channel["work_context"]["sources"]
+        if r["kind"] == "explore_turn_context"
     )
+    assert not any(r.get("kind") == "explore_turn_context" for r in channel["required_reads"])
     read = subprocess.run(
-        [sys.executable, "-m", "loopx.cli", *shlex.split(required["command"])[1:]],
+        [sys.executable, "-m", "loopx.cli", *shlex.split(source["command"])[1:]],
         capture_output=True,
         text=True,
         check=True,
     )
     result = json.loads(read.stdout)
+    # The CLI adds its route receipt; the registered reader returns the same
+    # canonical context without transport diagnostics.
+    assert result.pop("source_runtime_route")["routed_to_source_registry"] is False
+    assert result == source["content"]
     assert result["graph_enabled"] is True
     assert result["harness"] is None
 

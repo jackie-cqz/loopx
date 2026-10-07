@@ -201,6 +201,7 @@ def build_change_quality_prepare_packet(
                 "Review only the exact changed scope and resolve the projected repository instruction and ownership references.",
                 "Write one grounded reuse conclusion and one grounded simplification conclusion.",
                 "Prefer deletion, reuse, direct control flow, and established language idioms over redundant state, parameters, branches, wrappers, or speculative abstraction.",
+                "Simplification must preserve decision meaning, including agent-consumed prose. Follow the repository's budget decision guide: unchanged fields or green size tests do not prove equivalence; prefer justified regression-limit increases over semantic loss.",
                 "Emit a risks[] item only when a guardrail has a concrete triggered risk; do not write all-clear rows for inactive guardrails.",
                 "LoopX derives guardrail status from sparse risks[] and validation[]; the Agent does not author guardrail states.",
                 "Use blocker only for concrete correctness, security, privacy, contract, or required-validation failures.",

@@ -1226,8 +1226,7 @@ def record_quota_monitor_poll(
                 todo_id=normalized_receipt_todo_id,
                 role="agent",
             )
-            items = bound_records.get("todos") or []
-            auxiliary_settlement_todo = items[0] if len(items) == 1 else None
+            auxiliary_settlement_todo = bound_records.get("todo")
     effective_todo_id = normalized_observation_todo_id or (
         normalized_receipt_todo_id if not target_key else None
     )

@@ -157,6 +157,9 @@ def extend_turn_start_dispatch(
         requested_read_scope=("goal_capability_configuration",),
         requested_write_scope=(),
         producer=produce,
+        context_reader=lambda: explore_turn_context(
+            registry_path=registry_path, runtime_root=runtime_root,
+            goal_id=goal_id, agent_id=agent_id),
         required_read={
             "kind": "explore_turn_context",
             "command": command,
@@ -166,7 +169,9 @@ def extend_turn_start_dispatch(
     )
     extra = dispatch_turn_start_hooks((hook,))
     result = dict(dispatch or {})
-    for key in ("results", "required_reads", "failures"):
+    for key in ("results", "required_reads", "failures", "contexts"):
+        if key == "contexts" and not extra.get(key):
+            continue
         result[key] = list(result.get(key) or []) + list(extra.get(key) or [])
     for key in ("registered_count", "invoked_count"):
         result[key] = int(result.get(key) or 0) + int(extra.get(key) or 0)

@@ -867,7 +867,12 @@ def main() -> int:
         assert guard_argv[guard_argv.index("--registry") + 1] == str(
             (home / ".loopx" / "registry.global.json").resolve()
         ), canary_payload
-        assert canary_payload["compact_prompt_command"] in canary_payload["task_body"], canary_payload
+        # Brief diagnostics expose only the selected generator. The task body
+        # still teaches the compact drill-down; do not resurrect its removed
+        # diagnostic alias to qualify the installed CLI.
+        assert "compact_prompt_command" not in canary_payload, canary_payload
+        assert canary_payload["brief_prompt_command"].startswith("loopx-canary "), canary_payload
+        assert "heartbeat-prompt --compact" in canary_payload["task_body"], canary_payload
         canary_task_body = canary_payload["task_body"]
         # Brief mode renders one bounded guard block: it deliberately omits the
         # accountable refresh/spend pair, which belongs to the full and compact

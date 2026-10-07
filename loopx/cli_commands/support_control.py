@@ -15,7 +15,6 @@ from ..chat_server import (
     DEFAULT_CHAT_PORT,
     serve_chat,
 )
-from ..control_plane.reward_memory import reward_memory_goal_policy
 from ..control_plane.scheduler.execution_context import SchedulerRuntimeProfile
 from ..dashboard_launcher import launch_dashboard, replace_existing_loopx_chat
 from ..execution_profile import execution_profile_turn_granularity
@@ -313,13 +312,6 @@ def handle_support_control_command(
                 if isinstance(registry_goal, dict)
                 else None
             )
-            reward_memory_policy = reward_memory_goal_policy(
-                registry_goal if isinstance(registry_goal, dict) else {}
-            )
-            reward_memory_enabled = bool(
-                reward_memory_policy["enabled"]
-                and reward_memory_policy["automation"].get("automatic_ingest") is True
-            )
             agent_profile = None
             if args.agent_id:
                 effective_agent_id = require_registered_agent_id(
@@ -330,6 +322,16 @@ def handle_support_control_command(
                 )
                 agent_profile = agent_profile_from_registry(
                     agent_registry_path, args.goal_id, effective_agent_id
+                )
+            reward_memory_enabled = False
+            if effective_agent_id is not None:
+                from ..capabilities.reward_memory.configuration import (
+                    reward_memory_automatic_ingest_for_agent,
+                )
+
+                reward_memory_enabled = reward_memory_automatic_ingest_for_agent(
+                    registry_goal if isinstance(registry_goal, dict) else {},
+                    effective_agent_id,
                 )
             explicit_scheduler_fields = (
                 args.host_surface,
@@ -627,6 +629,7 @@ def handle_support_control_command(
                 replace_existing_loopx_chat(args.host, args.port)
             serve_chat(
                 project_workspace_grant=args.project_workspace_grant,
+                project_filesystem_scope=args.project_filesystem_scope,
                 private_reactions=not getattr(args, "no_private_reactions", False),
                 registry_path=chat_registry_path,
                 runtime_root_override=args.runtime_root,

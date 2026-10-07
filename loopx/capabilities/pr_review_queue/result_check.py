@@ -6,6 +6,7 @@ from typing import Any
 
 from .review_contract import (
     COMPATIBILITY_ASSESSMENT,
+    DECISION_TEXT_ASSESSMENT,
     OUTCOME_IMPACT_ASSESSMENT,
     PROBLEM_EXPLANATION_PUBLICATION,
     REVIEWER_DECLARATION,
@@ -355,6 +356,31 @@ def _unpublished_spec_references(value: object, body: str) -> list[str]:
     ]
 
 
+def _check_decision_text(blockers: list[str], value: object) -> None:
+    key = "observable_semantics:decision_text_assessment"
+    contract = DECISION_TEXT_ASSESSMENT
+    _require_fields(blockers, evidence_id=key, value=value, fields=contract["fields"])
+    if not isinstance(value, Mapping):
+        return
+    verdict = value.get("verdict")
+    if verdict not in contract["verdict_values"]:
+        blockers.append(f"{key}:invalid_verdict")
+    if verdict in contract["blocking_verdicts"]:
+        blockers.append(f"{key}:blocking_verdict")
+    if verdict == "not_applicable":
+        return
+    _require_fields(blockers, evidence_id=key, value=value, fields=contract["applicable_fields"])
+    if verdict == "intentional_change_validated":
+        _require_fields(blockers, evidence_id=key, value=value, fields=["authorization_basis"])
+    for field, fields in (("clause_comparisons", contract["clause_fields"]),
+                          ("counterfactuals", contract["counterfactual_fields"])):
+        items = _require_items(blockers, evidence_id=f"{key}:{field}", row=value,
+                               requirement={"items_field": field, "item_fields": fields,
+                                            "item_count": {"minimum": 1}})
+        if field == "counterfactuals" and any(item.get("status") != "passed" for item in items):
+            blockers.append(f"{key}:counterfactual_not_proven")
+
+
 def _check_scope_coverage(blockers: list[str], value: object) -> None:
     key = "observable_semantics:scope_coverage"
     contract = SCOPE_COVERAGE_ASSESSMENT
@@ -478,6 +504,7 @@ def check_review_result(
                 blockers.extend(check_architecture_assessment(row.get("architecture_assessment")))
             if key == "observable_semantics":
                 _check_scope_coverage(blockers, row.get("scope_coverage"))
+                _check_decision_text(blockers, row.get("decision_text_assessment"))
             if key == "semantic_alignment":
                 decision = row.get("candidate_decision")
                 verdict = row.get("verdict")

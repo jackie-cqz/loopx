@@ -94,6 +94,62 @@ still require a separately pinned experiment. Capture grants no additional
 read/write/lease authority. Keep captures private; disable the option in the
 next run and use ordinary file management to remove unneeded records.
 
+Whole-Goal requirements and selected work have different sources. After final
+delivery admission, the shared typed interaction owner adds these pre-work reads
+after any existing hook reads, without duplicating identical commands. The
+Agent channel is the single carrier; CLI actions do not repeat the list. See
+[required work context](../required-work-context.md) for the changed exact-read
+default and caller migration:
+
+1. `cat -- <registered-state-file>` restores the whole Goal intent, acceptance
+   and stop conditions. The pointer is resolved from the registered Goal, not a
+   selected Todo or run-history source label.
+2. When canonical acceptance is enabled, `goal-acceptance inspect --goal-id …`
+   restores its full objective, non-goals, criteria, scope and revision. It does
+   not execute validators or expose their commands. A scoped acceptance contract
+   does not replace original Goal intent or prove global completion.
+3. For selected work, `todo list --goal-id … --todo-id …` restores full current
+   task text and status/claim once at `todo.text` (exact reads remove list/role
+   aliases and reject `--thin`), including when canonical
+   Todos supersede a stale Markdown display. Adaptive work uses its primary ID.
+
+Ordinary product heartbeat consumes current task/acceptance/User sources from
+`interaction_contract.agent_channel.work_context`, then any remaining
+`agent_channel.required_reads`. The Agent channel is the single content/read
+carrier; the CLI channel carries transitions. TurnEnvelope consumes and signs
+both as `work_context` and `required_reads`; it never independently synthesizes
+another policy. Already delivered content requires no second CLI invocation.
+The mixed Goal document remains an exact progressive full read; quota checks
+source availability rather than automatically copying unrelated tasks/history.
+No heading heuristic replaces Goal intent. `work_context.complete` does not
+settle pending read obligations. Full delivered sources and related User
+obligations survive budget overflow. Missing,
+ambiguous, failed or changed sources require recovery and a fresh guard before
+dependent work; content grants no claim, lease or amendment authority.
+
+This is a default decision/heartbeat behavior change, not an envelope opt-in.
+Admitted replans acquire Goal reads, without an old selected-Todo read.
+Non-delivery, selection-only, settlement-only and governed-capability lanes
+acquire no extra core work reads. Related User obligations remain scoped; full quota summaries stay compact. Shared adapters retain
+selected Todo context; text aliases require exact equality, never a case-folded
+or truncated-prefix match. Supplied selected text survives envelope serialization
+intact. Hosts must honor the reads; signing does not prove execution or model
+adherence. Full Goal requirement coverage and global closeout remain open.
+No new frontend/Lark operation or configuration is introduced. Regenerate saved
+expanded heartbeat prompts to consume the new contract; bootstrap prompts reload
+installed rules on their next wake. This source-checkout change does not upgrade
+an installed runtime or modify an existing automation.
+
+中文：共享 typed interaction owner 在准入后生成 Goal 原文、已启用的结构化验收、
+当前 Todo 全文三层读取。普通产品 heartbeat 消费 agent channel 清单，TurnEnvelope
+只传输并签名同一清单；不能仅由短包临时推导义务。Goal 原文恢复完整意图和停止条件，
+局部验收不能替代完整目标，任务状态/claim 继续由精确 Todo reader 提供。读取失败、
+缺失、歧义或变化须重新 guard；当前内容不是 selection 快照，签名也不证明模型已读。
+这是默认 guard/heartbeat 行为变化：准入的 replan 读取 Goal，等待、待选择、仅结算及
+受治理 capability 分支不追加读取。完整义务覆盖与全局收口仍未实现。旧的展开式
+heartbeat prompt 需重新生成；bootstrap 会在下次唤醒重载已安装规则。本源码改动不会
+升级已安装 runtime 或修改现有 automation，也不新增前端/Lark 操作。
+
 The envelope flag selects a projection of the full decision. The original v0
 contract left the default `quota should-run` output unchanged; the
 [PR-05 migration](protocol-action-packet-decision-v0.md) omits
@@ -120,6 +176,21 @@ liveness, vision/handoff state, and actionable warning references. A canonical
 envelope; matching hashes prove the covered action dimensions agree for that
 projection. They do not prove that every possible quota state has test
 coverage.
+
+Required reads use the authoritative `interaction_contract.agent_channel` list,
+including an explicit empty list. Historical interaction-root and payload lists
+remain fallbacks when that carrier is absent. Commands retain their exact bytes;
+existing `ordering`, `hook_id` and `capability_id` coordinates survive both the
+quota transport and the signed envelope projection. Provider diagnostics remain
+outside this whitelist. A matching signature cannot prove that omitted reads
+were complete or that a host executed them. Newly projected decisions retain
+these corrected facts in the existing required-read dimension; saved signatures
+are not rewritten, and no new execution permission is granted.
+
+中文：必读列表优先使用 agent_channel 的权威列表，包括明确的空列表；缺失时
+才兼容旧位置。命令原样保留，已有读取顺序、hook 和 capability 身份贯穿 quota
+传输与签名短包，私有诊断不进入该列表。修正新投影不重写历史签名；签名相等
+不能证明读取完整或宿主已经执行，也不提供新的权限。
 
 Action-signature coverage is versioned independently from the envelope schema.
 `turn_envelope_action_dimensions_v0` covers the original action projection;
@@ -433,8 +504,20 @@ repeat another authoritative field. In particular,
 todo text is already present as the recommended action. Scheduler reset plans
 keep the exact acknowledgement argv inline when it satisfies the executable
 argv limits; the failure argv stays behind `failure_cli_args_detail_ref` until
-the host update actually fails. Consumers must follow these references instead
-of treating the omitted duplicate as missing state.
+the host update actually fails. Both omitted-argv references now carry a
+`detail_ref` into `full_decision.scheduler_hint.<source carrier>` instead of an
+unbound `quota should-run --include-detail scheduler` request. Resolve that path
+through this envelope's captured `detail_ref.full_decision`, check its
+Goal/Agent/Turn and source hash, and retain the original argv verbatim. The
+carrier is `app_automation` when supplied, otherwise the historical `codex_app`;
+an alias must not redirect the reference to another source. Missing capture
+requires recovery, never another admission disguised as a detail read. Actual
+host readback and current scheduler mutation validation still apply.
+
+中文：被省略的 ACK 和失败上报参数通过同一 Turn 保存的完整决策读取，不再
+提示执行未绑定的新 quota 命令。先核对 Goal/Agent/Turn 和来源哈希，再按
+`detail_ref` 读取原始参数；历史 Codex 投影仍使用其原始来源。捕获丢失须恢复，
+不得将重新准入当作细节读取；此引用不代替实际 host 读回或调度写入时的验证。
 
 This contract is a projection only. It does not change quota selection, todo
 routing, scheduler state, history writes, or state transitions. Promoting it to

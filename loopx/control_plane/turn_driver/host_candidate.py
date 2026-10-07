@@ -12,6 +12,7 @@ import json
 from typing import Any
 
 from ..quota.turn_envelope import turn_envelope_action_signature_document
+from .driver import selected_turn_todo
 
 LOOPX_TURN_HOST_REQUEST_SCHEMA = "loopx_turn_host_request_v0"
 LOOPX_TURN_RESULT_SCHEMA = "loopx_turn_result_v0"
@@ -88,6 +89,16 @@ def extract_turn_authority(request: Mapping[str, Any]) -> dict[str, Any]:
         "write_scope": list(write_scope) if isinstance(write_scope, list) else [],
         "workspace_guard": _mapping(boundary.get("workspace_guard")),
     }
+    if isinstance(envelope.get("work_context"), Mapping):
+        authority["work_context"] = dict(envelope["work_context"])
+    selected = selected_turn_todo(envelope)
+    if selected:
+        # Both the declaration and a possible exact-text alias are signed.
+        # Do not replace a complete task with the shorter primary-action label.
+        if selected.get("text_ref") == "action.recommended_action":
+            selected = {**selected, "text": action.get("recommended_action")}
+            selected.pop("text_ref")
+        authority["selected_todo"] = selected
     unavailable = _mapping(_mapping(envelope.get("contract_capsule")).get("unavailable_context"))
     if unavailable:
         authority["unavailable_context"] = unavailable
@@ -123,7 +134,8 @@ def render_prompt(authority: Mapping[str, Any]) -> str:
     return (
         "You are executing one bounded LoopX-governed work segment.\n"
         "The JSON below is the complete host authority for this Turn. Execute "
-        "primary_action only after required_reads, write only inside write_scope, "
+        "primary_action only after reading work_context and any remaining required_reads. "
+        "Do not repeat reads already fulfilled in work_context. Write only inside write_scope, "
         "and obey workspace_guard. Do not infer authority from other prose.\n\n"
         f"{context_instruction}"
         f"Turn authority JSON:\n{authority_json}\n\n"

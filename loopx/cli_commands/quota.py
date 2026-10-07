@@ -322,7 +322,9 @@ def _dispatch_quota_turn_start_hooks(
         context_dispatch = extend_preferences(context_dispatch, runtime_root=root, registry_path=registry_path,
             goal_id=args.goal_id, agent_id=args.agent_id)
         dispatch = dict(dispatch)
-        for key in ("results", "required_reads", "failures"):
+        for key in ("results", "required_reads", "failures", "contexts"):
+            if key == "contexts" and not context_dispatch.get(key):
+                continue
             dispatch[key] = list(dispatch.get(key) or []) + list(context_dispatch.get(key) or [])
         for key in ("registered_count", "invoked_count"):
             dispatch[key] = int(dispatch.get(key) or 0) + int(context_dispatch.get(key) or 0)
@@ -377,7 +379,9 @@ def _attach_turn_start_hook_dispatch(
     dispatch: Mapping[str, object] | None,
 ) -> None:
     if dispatch and (dispatch.get("registered_count") or dispatch.get("failures")):
-        payload["turn_start_capability_hook_dispatch"] = dict(dispatch)
+        payload["turn_start_capability_hook_dispatch"] = {
+            key: value for key, value in dispatch.items() if key != "contexts"
+        }
 
 
 

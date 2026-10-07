@@ -5,7 +5,10 @@ import {
   requireNonEmptyString,
   requireStringArray,
   requireStringLiteral,
+  optionalNonEmptyString,
+  jsonObject,
 } from "../runtime_decode.ts";
+import { EffectiveAction } from "../quota/effective_action.generated.ts";
 
 import type { JsonObject } from "../effect_program.ts";
 
@@ -150,4 +153,126 @@ export function decodeInteractionContract(value: unknown): InteractionContract {
       "interaction_contract.cli_channel",
     ),
   };
+}
+
+function readArgument(value: unknown, label: string): string | null {
+  const text = optionalNonEmptyString(value, label);
+  if (text?.includes("\0")) throw new EffectRuntimeRequestError(`${label} contains NUL`);
+  return text;
+}
+
+function shellQuote(value: string): string {
+  return /^[A-Za-z0-9_./:-]+$/.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+/** The adaptive primary is the work identity for both reads and settlement. */
+export function selectedWorkTodoId(packet: JsonObject): string | null {
+  const orchestration = jsonObject(packet.task_orchestration_contract) ?? {};
+  const primaryTodoId = typeof orchestration.primary_todo_id === "string"
+    ? orchestration.primary_todo_id.trim() : "";
+  if (orchestration.schema_version === "task_orchestration_contract_v2"
+      && orchestration.mode === "adaptive" && primaryTodoId) return primaryTodoId;
+  const selected = jsonObject(packet.selected_todo) ?? {};
+  return typeof selected.todo_id === "string" && selected.todo_id.trim() ? selected.todo_id : null;
+}
+
+/** Generate the shared pre-work reads after final admission. Hosts consume this
+ * list; transport projections must not independently infer requirements.
+ * Python supplies registered source routing, never a second admission rule.
+ */
+export function projectInteractionRequiredReads(request: JsonObject): JsonObject {
+  if (!Array.isArray(request.required_reads)) {
+    throw new EffectRuntimeRequestError("required_reads must be an array");
+  }
+  const reads = request.required_reads.map(value => {
+    const read = requireJsonObject(value, "required read");
+    readArgument(read.command, "required read command");
+    return {...read};
+  }).filter(read => read.command);
+  const shouldRun = requireBoolean(request.should_run, "should_run");
+  const deliveryAllowed = requireBoolean(request.delivery_allowed, "delivery_allowed");
+  const selectionRequired = requireBoolean(request.selection_required, "selection_required");
+  const hasReplan = requireBoolean(request.has_replan, "has_replan");
+  const settlementOnly = requireBoolean(request.settlement_only, "settlement_only");
+  const acceptanceEnabled = requireBoolean(request.goal_acceptance_enabled, "goal_acceptance_enabled");
+  const goalId = readArgument(request.goal_id, "goal_id");
+  if (!shouldRun || !deliveryAllowed || selectionRequired || settlementOnly || !goalId
+      || request.effective_action === EffectiveAction.GOVERNED_CAPABILITY_INTENT) {
+    return {required_reads: reads};
+  }
+  const prefix = requireNonEmptyString(request.command_prefix, "command_prefix");
+  const goalArg = shellQuote(goalId);
+  const add = (command: string, source: string, reason: string) => {
+    if (!reads.some(read => read.command === command)) reads.push({command, source, reason, ordering: "before_work"});
+  };
+  const stateFile = readArgument(request.goal_state_file, "goal_state_file");
+  if (stateFile) add(`cat -- ${shellQuote(stateFile)}`, "goal_state",
+    "Read complete Goal intent, acceptance and stops. Exact Todo reads own task state/claims. Source failure or changed requirements require a fresh guard; summaries cannot replace this read.");
+  if (acceptanceEnabled) add(`${prefix} --format json goal-acceptance inspect --goal-id ${goalArg}`,
+    "goal_acceptance", "Read full configured objective, non-goals and criteria with scope/revision. Scoped acceptance does not replace Goal intent or prove completion; disabled/changed criteria require a fresh guard.");
+  const todoId = hasReplan ? null : selectedWorkTodoId(request);
+  if (todoId) add(`${prefix} --format json todo list --goal-id ${goalArg} --todo-id ${shellQuote(todoId)}`,
+    "selected_todo", "Read full current requirements and status/claim. Require one matching active Todo; missing, ambiguous or changed work requires a fresh guard. A summary cannot replace this read.");
+  return {required_reads: reads};
+}
+
+/** Context routing reuses the admitted work identity; User scope remains owned
+ * by the canonical Todo reader. No content confers execution authority. */
+export function planInteractionWorkContext(request: JsonObject): JsonObject {
+  const packet = requireJsonObject(request.packet, "packet");
+  const interaction = jsonObject(packet.interaction_contract) ?? {};
+  const cli = jsonObject(interaction.cli_channel) ?? {};
+  const todoId = selectedWorkTodoId(packet);
+  const selected = jsonObject(packet.selected_todo) ?? {};
+  return {todo_id: todoId,
+    selected_todo: selected.todo_id === todoId ? selected : {todo_id: todoId},
+    read_user_todos: cli.selection_required !== true
+      && packet.effective_action !== EffectiveAction.HEARTBEAT_SETTLED_SKIP};
+}
+
+/** Deliver current task sources once; the mixed Goal document stays a progressive
+ * read. Failed or changed sources forbid dependent work until a fresh guard. */
+export function projectInteractionWorkContext(request: JsonObject): JsonObject {
+  if (!Array.isArray(request.required_reads) || !Array.isArray(request.source_results)) {
+    throw new EffectRuntimeRequestError("context reads and source results must be arrays");
+  }
+  const results = request.source_results.map(value => requireJsonObject(value, "context source"));
+  const selected = jsonObject(request.selected_todo) ?? {};
+  const pending: JsonObject[] = [], sources: JsonObject[] = [], failures: JsonObject[] = [];
+  for (const value of request.required_reads) {
+    const read = requireJsonObject(value, "required read");
+    const matches = results.filter(result => result.command === read.command);
+    if (matches.length === 0) { pending.push(read); continue; }
+    const result = matches[0];
+    const content = jsonObject(result.content);
+    let valid = matches.length === 1 && content !== null && content.ok !== false && !result.error_code;
+    if (valid && read.source === "selected_todo") {
+      const todo = jsonObject(content!.todo) ?? {};
+      valid = content!.matched === true && content!.ambiguous !== true
+        && todo.todo_id === selected.todo_id && todo.archive_state !== "archive"
+        && todo.status !== "done"
+        && ["status", "claimed_by"].every(field => selected[field] === undefined || selected[field] === todo[field]);
+    }
+    if (valid && read.source === "goal_acceptance") {
+      valid = jsonObject(content!.goal_acceptance_contract)?.enabled === true;
+    }
+    if (!valid) {
+      pending.push(read);
+      failures.push({source: read.source ?? read.kind, command: read.command,
+        error_code: "context_source_unavailable", instruction: "Recover source and rerun the guard; cached context cannot authorize work."});
+    } else if (read.source === "goal_state") {
+      // This legacy document also contains other tasks and historical evidence.
+      // Checking its availability does not fulfill model consumption; retain the
+      // full read instead of guessing which prose is current Goal authority.
+      pending.push(read);
+    } else {
+      sources.push({...read, content: content!});
+    }
+  }
+  const users = jsonObject(request.user_todos);
+  if (users?.error_code) failures.push({source: "user_todos", error_code: users.error_code,
+    instruction: "Recover current User obligations and rerun the guard."});
+  return {required_reads: pending, work_context: {complete: failures.length === 0,
+    sources, ...(users && !users.error_code ? {user_todos: users} : {}), failures,
+    instruction: "Read these current sources and remaining required_reads before work. Do not repeat fulfilled reads. Changes require a fresh guard; summaries, preferences and context grant no authority."}};
 }

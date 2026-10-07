@@ -65,6 +65,8 @@ def _url(value: str) -> tuple[str, str]:
     canonical = origin + (parsed.path or "/")
     if parsed.query:
         canonical += "?" + parsed.query
+    if parsed.fragment:
+        canonical += "#" + parsed.fragment
     return canonical, origin
 
 
@@ -168,7 +170,7 @@ def _navigation(config: ReaderConfig, url: str, *, image: bool = False) -> str:
     # query escaping. The fixed operator-owned script, not page data, supplies
     # this canonical target. Recheck its origin before touching the reserved Page.
     return (
-        f"const requestedUrl={json.dumps(url)};const target=new URL(requestedUrl);target.hash='';"
+        f"const requestedUrl={json.dumps(url)};const target=new URL(requestedUrl);"
         f"const origins={json.dumps(sorted(config.origins))}.map(o=>new URL(o).origin);"
         "if(!origins.includes(target.origin))throw new Error('source_origin_not_authorized');"
         f"let t;try{{t=await taskSpace({config.task_space});}}catch(e){{"
@@ -180,7 +182,7 @@ def _navigation(config: ReaderConfig, url: str, *, image: bool = False) -> str:
         # a loading shell. Prefer semantic content, including short posts;
         # unrelated sidebar/comment spinners must not delay a readable article.
         "let sourceReady=true;try{await p.waitForFunction((url)=>{"
-        "const current=new URL(location.href);current.hash='';"
+        "const current=new URL(location.href);"
         "if(current.href!==url)return true;"
         "const ancillary='aside,nav,header,footer,[role=\"complementary\"],"
         "[role=\"navigation\"],[role=\"banner\"],[role=\"contentinfo\"]';"
@@ -216,7 +218,7 @@ def _script(config: ReaderConfig, url: str) -> str:
     return (
         _navigation(config, url) +
         "const r=await p.evaluate((request)=>{"
-        "const current=new URL(location.href);current.hash='';"
+        "const current=new URL(location.href);"
         # Fence before reading DOM, atomically with extraction. A raced Page or
         # redirect returns no content, even within another authorized origin.
         "if(current.href!==request.url)return {error:'source_url_changed'};"
@@ -302,17 +304,17 @@ def _image_script(config: ReaderConfig, url: str, index: int, path: str) -> str:
         _navigation(config, url, image=True) +
         f"const request={request};"
         "const initial=await p.evaluate((r)=>{"
-        "const u=new URL(location.href);u.hash='';"
+        "const u=new URL(location.href);"
         "if(u.href!==r.url)return {error:'source_url_changed'};"
         "if(!r.ready)return {error:'source_content_not_ready'};"
         "const im=document.images[r.index];if(!im)return {error:'source_image_unavailable'};"
         "im.scrollIntoView({block:'center'});return {ok:true};},request);"
         "if(initial.error){console.log('LOOPX_PUBLIC_SOURCE:'+JSON.stringify(initial));}else{"
-        "await p.waitForFunction((r)=>{const u=new URL(location.href);u.hash='';"
+        "await p.waitForFunction((r)=>{const u=new URL(location.href);"
         "if(u.href!==r.url)return true;const im=document.images[r.index];"
         "return im&&im.complete&&im.naturalWidth>1&&im.naturalHeight>1;},"
         "request,{timeout:10000});"
-        "const before=await p.evaluate((r)=>{const u=new URL(location.href);u.hash='';"
+        "const before=await p.evaluate((r)=>{const u=new URL(location.href);"
         "if(u.href!==r.url)return {error:'source_url_changed'};"
         "const im=document.images[r.index];const b=im.getBoundingClientRect();"
         "if(b.width<2||b.height<2||b.width>r.edge||b.height>r.edge)"
@@ -321,7 +323,7 @@ def _image_script(config: ReaderConfig, url: str, index: int, path: str) -> str:
         "clip:{x:b.left+scrollX,y:b.top+scrollY,width:b.width,height:b.height}};},request);"
         "if(before.error){console.log('LOOPX_PUBLIC_SOURCE:'+JSON.stringify(before));}else{"
         f"await p.screenshot({{path:{json.dumps(path)},fullPage:true,clip:before.clip}});"
-        "const stable=await p.evaluate((r)=>{const u=new URL(location.href);u.hash='';"
+        "const stable=await p.evaluate((r)=>{const u=new URL(location.href);"
         "if(u.href!==r.url)return false;"
         "const im=document.images[r.index];const b=im?.getBoundingClientRect();"
         "return u.href===r.url&&im?.currentSrc===r.src&&b&&"

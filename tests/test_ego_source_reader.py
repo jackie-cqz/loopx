@@ -690,6 +690,8 @@ def test_primary_busy_state_cannot_be_bypassed_by_readable_chrome(configured, tm
     ("https://example.com/a/../", "https://example.com/"),
     ('https://example.com/?q="x"', "https://example.com/?q=%22x%22"),
     ("https://example.com/a/%2e%2e/article", "https://example.com/article"),
+    ("https://example.com/#/blog/article", "https://example.com/#/blog/article"),
+    ("https://example.com/article#section-2", "https://example.com/article#section-2"),
 ])
 def test_browser_equivalent_urls_keep_exact_resource_fence(configured, tmp_path, image, url, canonical):
     result, observation = run_generated_script(reader.ReaderConfig.from_environment(), url,
@@ -707,6 +709,33 @@ def test_generated_scripts_reject_real_redirect_before_dom(configured, tmp_path,
                                                image, tmp_path / "image.png", redirect=redirect)
     assert result == {"ok": False, "error": "source_url_changed"}
     assert observation == {"domReads": 0, "captures": 0}
+
+
+@pytest.mark.parametrize("image", [False, True])
+@pytest.mark.parametrize("redirect", [
+    "https://example.com/", "https://example.com/#/blog/different",
+])
+def test_fragment_routes_are_fenced_before_text_or_pixels(configured, tmp_path, image, redirect):
+    url = "https://example.com/#/blog/article"
+    result, observation = run_generated_script(reader.ReaderConfig.from_environment(), url,
+                                               image, tmp_path / "image.png", redirect=redirect)
+    assert result == {"ok": False, "error": "source_url_changed"}
+    assert observation == {"domReads": 0, "captures": 0}
+
+
+def test_public_read_preserves_fragment_without_changing_origin_authority(configured, monkeypatch):
+    url = "https://example.com/#/blog/article"
+    calls = []
+    def run(_args, **_kwargs):
+        calls.append(_args[-1])
+        return response(extraction(url=url, requested_url=url, canonical_url=url))
+    monkeypatch.setattr(reader.subprocess, "run", run)
+    result = reader.read_public_url(url)
+    assert result["ok"] and result["url"] == result["requested_url"] == url
+    assert "requestedUrl=" + json.dumps(url) in calls[0]
+    assert reader._url(url)[1] == "https://example.com"
+    assert reader.read_public_url("https://other.test/#https://example.com")["error"] == "source_origin_not_authorized"
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize("field,value", [("requested_url", "https://example.com/different"),

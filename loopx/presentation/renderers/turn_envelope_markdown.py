@@ -1,6 +1,13 @@
 from __future__ import annotations
 
 from typing import Any
+import json
+
+
+def work_context_lines(context: dict[str, Any]) -> list[str]:
+    """Complete source content once; arbitrary source text stays JSON-escaped."""
+    return ["", "## Current work context", "", context.get("instruction", ""),
+        "", "```json", json.dumps(context, ensure_ascii=False, indent=2), "```", ""]
 
 
 def turn_envelope_budget_warning_lines(payload: dict[str, Any]) -> list[str]:
@@ -49,4 +56,6 @@ def render_turn_envelope_markdown(payload: dict[str, Any]) -> str:
         f"- within_budget: `{compaction.get('within_budget')}`",
         *turn_envelope_budget_warning_lines(payload),
     ]
+    if isinstance(payload.get("work_context"), dict):
+        lines.extend(work_context_lines(payload["work_context"]))
     return "\n".join(lines)

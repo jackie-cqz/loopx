@@ -177,8 +177,6 @@ print(json.dumps({'executable': sys.executable, 'package': str(package),
             "runtime_shadow": {"schema_version": "loopx_coordination_runtime_shadow_config_v0",
                 "enabled": True, "provider": "file_v0"}})
         self.registry.write_text(json.dumps(registry))
-        self.cli("console_handoff_mode_hard_lease", "handoff-mode", "set", "--goal-id", GOAL,
-            "--mode", "hard_lease")
         boot = self.cli("console_shadow_bootstrap", "coordination-shadow", "bootstrap", "--goal-id", GOAL, "--execute")["bootstrap"]
         require(boot.get("status") == "applied" and bool(boot.get("capture_lineage_id")), f"bootstrap not applied: {boot}")
         self.checked("real_baseline_bootstrap", capture_lineage_id=boot["capture_lineage_id"])

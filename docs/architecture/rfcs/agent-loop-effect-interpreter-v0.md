@@ -454,11 +454,11 @@ Current source-path audit for the first convergence slice:
 | Execution fact | Existing owner / projection | Remaining boundary |
 |---|---|---|
 | Goal/Agent/Todo identity | Quota selection and receipt; envelope actor, selected Todo and signed settlement identity | Capture identity and mutation-time validation remain necessary; display identity is not an execution grant |
-| Full requirements | Interaction required reads; compact commands retained verbatim | Shared full Goal/Todo reads are proposed in #5794; neither a summary nor a source hash proves that a host read them |
+| Full requirements | Authoritative Agent-channel work context plus remaining reads; effective Todo, acceptance and scoped User obligations, with the full Goal on its progressive read | Registered source readers fulfill current task reads inline in both transports; the mixed Goal remains mandatory on its full read path; source failure holds dependent delivery. Live model adoption and packaged host journeys remain unqualified |
 | Capability refusal | Existing quota `capability_gate_v0`; compact boundary now retains exact `required`/`missing` arrays and historical source names | This repairs omitted facts, not readiness policy or capability activation |
 | Selection / claim / lease | Selected Todo, action portfolio and current owning transactions | Compact selected ownership is not a fresh lease; retain the captured source and revalidate at the owning mutation |
 | Replan / Goal closure | Replan action packet, contract capsule and vision audit | Full evidence remains on authorized detail paths; Todo completion is not Goal completion |
-| Settlement / scheduler | Intact typed settlement plan and explicit host-owned scheduler projection | Scheduler detail, actual host readback and exactly-once recovery still need host adoption qualification |
+| Settlement / scheduler | Intact typed settlement plan and explicit host-owned scheduler projection; omitted scheduler argv references resolve the same captured full decision | Unbound detail commands are retired in this projection. Actual host readback, stale mutation refusal and exactly-once recovery still need host adoption qualification |
 | Optional memory | Verified boundary participation plus fresh host binding | Off/recall/ingest/stale/provider-failure isolation remains mandatory; transport parity is not model value |
 
 The capability-fact correction is a read-model change in the established
@@ -470,6 +470,32 @@ provider-failure and settlement cases remain covered separately, and do not
 qualify installed App convergence or model costs. Keep all three Todos below
 open until their own acceptance is met; this inventory is not blanket permission
 to delete the remaining Python IO adapters.
+
+The unified required-work context proposal now returns full current task sources in
+ordinary Heartbeat/quota packets as well as signed envelopes, without enabling
+TurnEnvelope. The existing TypeScript interaction owner selects and fulfills
+reads; registered Python adapters check the Goal source and deliver enabled
+acceptance, effective work, scoped open User obligations and preference/Explore
+context. The mixed Goal document retains its mandatory full progressive read;
+no prose classifier infers current intent from historical sections. Unsupported
+provider reads remain explicit obligations. Failed or changed sources hold
+dependent delivery rather than granting authority from a summary. One Agent
+carrier preserves explicit empty lists, full requirement tails and hook identity;
+exact Todo detail returns one record and inventory views remain bounded.
+Legacy/File/SQLite CLI qualification covers full readback, source recovery,
+scoped gates and signed content mutation. See
+[required work context](../../reference/required-work-context.md). This changes
+the ordinary context-delivery default, not the transport selection default.
+Live model outcomes, packaged App/Lark operation and overall efficiency remain
+separate acceptance; active Python IO adapters are retained.
+
+统一工作上下文提案现在让普通 Heartbeat/quota 与签名 envelope 都直接返回完整当前任务来源，
+无需启用 TurnEnvelope。已有 TS interaction owner 决定读取和满足义务，注册的 Python
+适配器核验 Goal 来源，返回启用的验收、实际工作项、当前 Agent 相关的开放 User 事项，以及
+偏好和 Explore 上下文；混合 Goal 文件保留为必须完成的渐进式全文读取，不能按标题裁剪
+后冒充原始目标。尚无适配器的来源保留必读命令。来源失败或变化会阻止依赖它的交付。
+真实 Legacy/File/SQLite CLI 验证覆盖全文尾部、用户 gate、恢复和签名内容篡改。
+这是普通上下文交付默认值的变化；模型效果、安装后的 App/Lark 旅程及总体效率仍待验证。
 
 Remaining implementation Todos, in dependency order:
 
