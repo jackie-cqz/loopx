@@ -894,37 +894,57 @@ it does not grant execution quota, spending, or provider authority.
    or promotion thresholds stay fixed for that result; revised thresholds belong
    to a new qualification, never a relabeled historical pass.
 
-The fixed public CLI matrix at `2244b96f1e2e5c90bef43ae4c140c0994bfcc07a`
-and the settled-Turn cadence candidate exposed stale absolute ceilings on both
-revisions. The 96-row comparison retained 1/36/18 Todos and 1/12/12 history
-records, full command paths, enabled multi-subagent and blocking-gate cases.
-Quota's selected-Todo source carries current requirements, read freshness,
-before-work ordering and unavailable-source recovery; Turn transports that
-same context, and diagnose serves both selected and Goal-array consumers.
-Retain these caller contracts while calibrating the existing regression limits:
+The latest qualification pins true main `e47e4507a` and merged candidate
+`3955d1c8b` on the same public fixture, with explicit per-probe source imports.
+It retains 1/36/18 Todos, 1/12/12 history records, complete command routes,
+enabled multi-subagent and blocking-gate cases. All 96 character and line
+measurements match on each platform. Complete Linux consumer strings match
+apart from generated clock, receipt and source-decision hash metadata; raw
+output is not asserted byte-identical.
 
-| Output / 输出 | Same base/head measurement / 同口径测量 | Revised ceiling / 新上限 |
-| --- | --- | --- |
-| Quota small JSON / Markdown | 21,871 / 8,690 chars; 579 / 134 lines | 22,000 / 9,000 chars; 600 / 140 lines |
-| Quota crowded JSON / Markdown | 35,710 / 7,772 chars; 836 / 84 lines | 36,000 / 7,800 chars; 850 / 90 lines |
-| Quota explicit-detail Markdown | 8,760 chars; 134 lines | 9,000 chars; 140 lines |
-| Turn small / crowded / multi-agent JSON | 12,060 / 16,250 / 14,098 chars | 12,500 / 17,000 / 14,500 chars |
-| Crowded quota / Turn JSON with Agent vision | 41,503 / 16,679 chars; 939 / 427 lines | 42,000 / 17,000 chars; Turn 440 lines |
-| Turn transaction detail JSON | 13,688 chars | 14,000 chars |
-| TurnEnvelope JSON / enabled multi-subagent / Markdown | 10,498 / 11,426 / 3,949 chars; 255 / 279 / 90 lines | 12,000 JSON / 4,100 Markdown chars; 300 / 95 lines |
-| Diagnose small / crowded JSON | 21,521 / 45,122 chars | 22,000 / 46,000 chars |
+Retain the selected-Todo source and requirements, read freshness, before-work
+ordering and unavailable-source recovery. Long lanes still replan before
+continuing, use evidence-linked vision authoring, retain existing runnable
+work when appropriate and choose a reasonable in-scope next step or explain
+why none remains. Current preference instructions belong to participating
+hooks. These obligations and complete registry/runtime routes are retained;
+no lossless deletion of them is demonstrated by the size failures.
 
-Only exceeded character/line guards change; semantic, duplication, per-Todo and
-fixed-growth assertions retain their existing limits. Headroom is bounded by
-the frozen workload, not a universal percentage. This calibration changes
-output regression guards, leaving execution quota, envelope wire limits and
-frozen experiment/promotion criteria with their existing owners. The original
-failures remain failures under the old ceilings; rerun the complete matrix and
-affected semantic tests under the revised contract.
+The original Linux 151 tests, enforced matrix and true-main differential pass
+under the accepted main ceilings. Windows records three failures / 148 passes
+in the original suite; complete measurement exposes five over-limit rows plus
+the separate Agent-vision case. The same main costs fail there too. Calibrate
+only these six presentation lanes, preserving the original failed result:
 
-同一冻结负载在主干和候选上均超出旧回归预算；保留当前任务原文、读取时序、
-新鲜度、恢复和停止条件，并按上表校准已有输出检查。增长、语义及去重检查仍独立
-生效；此调整不授予执行额度，也不改写历史实验或验收结果。
+| Output | Previous chars / lines | Windows chars / lines | Revised chars / lines |
+| --- | --- | --- | --- |
+| Turn small JSON | 12,500 / 320 | 13,467 / 335 | 14,000 / 350 |
+| Turn multi-Agent JSON | 14,500 / 370 | 14,982 / 375 | 15,500 / 390 |
+| Turn crowded JSON with Agent vision | 17,000 / 440 | 17,371 / 444 | 18,000 / 460 |
+| Turn small Markdown | 300 / 12 | 565 / 10 | 600 / 12 |
+| Compact heartbeat JSON | 13,000 / 58 | 13,055 / 53 | 13,500 / 58 |
+| Turn transaction detail JSON | 14,000 / 360 | 14,584 / 365 | 15,000 / 380 |
+
+Only these character/line guards change. Same-workload Linux observations are
+12,044 / 296 small Turn JSON, 14,082 / 357 multi-Agent, 16,242 / 416 crowded,
+145 / 6 small Markdown, 12,779 / 53 compact heartbeat and 13,672 / 348
+transaction detail. Platform rendering needs bounded headroom; fixtures,
+semantic and bootstrap repetition checks, and all per-Todo/fixed-growth limits
+stay active. Measured Linux quota / Turn / diagnose growth is
+13,847 / 4,198 / 23,601 against 16,500 / 6,800 / 25,200 respectively.
+
+The production 8,192-byte performance diagnostic retains its own boundary.
+Linux crowded/multi-Agent Turn envelopes measure 10,766 / 9,391 UTF-8 bytes;
+plain envelope, transaction detail and multi-subagent measure
+8,544 / 8,539 / 9,312. They still report `within_budget=false` and
+`turn_envelope_budget_exceeded`; small Turn and blocking-user-gate remain
+within at 8,057 / 6,045. These warnings are not a green performance SLO or
+admission authority. This calibration grants no execution quota, spending or
+provider permission and does not rewrite frozen experiment/promotion results.
+
+本轮固定真实 main/候选和同一负载，逐条保留当前任务、读取时序、新鲜度、恢复、
+继续前 replan、证据关联及合理下一步要求。仅调整 Windows 同样在 main 上超限的
+六处展示预算；增长、重复度、生产性能诊断及执行权限边界不变，原失败保留。
 
 1. **同口径测量。** 记录 base/head、负载、指标和测量边界。紧凑 JSON 字符、UTF-8
    字节、嵌套键数、真实 stdout 和 token 不可互换。延迟要保留样本窗口、负载和
