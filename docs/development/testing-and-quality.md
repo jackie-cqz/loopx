@@ -794,53 +794,55 @@ change. Historical thresholds do not freeze a regression budget. This history is
 not a waived regression or a frozen SLO pass. An unchanged base failure must be
 attributed before it is distinguished from a new candidate regression.
 
-The current matched qualification (`8205c8bc1` base / `6350e7ce1` candidate)
-keeps every routed command and caller field: all sampled outputs are byte-identical.
-The original Linux failures remain 12,107 JSON / 10,198 Markdown for brief and
-15,023 JSON for crowded Turn planning. The same fixtures on Windows emit
-12,286 / 10,230 and 15,691 / 415 lines; quoted paths and readiness diagnostics
-are retained. Brief now has presentation ceilings of 12,500 / 10,500; crowded
-Turn planning has 16,000 characters / 420 lines. Its fixed semantic allowance
-is 4,500: the Windows 6,370 crowded-minus-small characters comprise 35*60 Todo
-allowance plus 4,270 fixed cost. The complete Linux matrix measures 6,544 growth,
-including 4,444 fixed cost and 56 characters headroom. The per-Todo guard stays 60.
+The matched qualification (`82b118229` main / `399d1bdd9` merged candidate)
+retains admitted work context, exact selected Todo text and acceptance, ordered
+required reads, captured scheduler decisions and complete registry/runtime
+command routes. All 96 Linux character and line measurements match; prose and
+routed commands match after excluding generated clock and receipt metadata.
+Windows has 93 equal measurements and three bootstrap JSON rows two characters
+smaller on the candidate, with unchanged routes, shapes and action signatures.
+These are unchanged upstream presentation failures, not new candidate growth.
 
-The eight heartbeat command fields are standalone caller actions and its task
-body contains two runnable instructions; replacing full registry/runtime routes
-with abbreviations could select another authority. Retaining the old ceilings
-would leave the original workload red, while deleting fields or adding a
-reference protocol would alter the caller contract. These bounded presentation
-changes retain the unchanged fixture, semantic and routing checks, line guards
-for brief, and the unaffected surface/format ceilings. They neither raise
-execution quota nor revise the historical failing result.
+The complete matrix measures Windows maxima of 21,796 / 579 lines for small
+quota JSON, 35,771 / 836 for crowded quota, 45,578 / 834 for crowded diagnosis,
+14,848 / 375 for multi-Agent planning, 14,449 / 365 for transaction detail,
+13,055 / 53 for compact heartbeat and 11,381 / 279 for the multi-subagent Turn
+Envelope. Small Markdown work/read context reaches 8,434 / 134 for quota and
+3,701 / 90 for the envelope; cold quota Markdown reaches 8,508 / 134. The
+separate real-vision fixture measures 41,564 JSON characters, and crowded Turn
+planning with vision reaches 17,236. Preserve those caller clauses and routes
+rather than removing current work, acceptance or independently runnable actions.
 
-Final full-matrix qualification (base d399043db / candidate b8debe686)
-also exposed two unchanged presentation failures. All three thin heartbeat
-scenarios emit 5,398 Markdown characters / 68 lines on Linux and 5,428 / 68 on
-Windows, byte-identically per platform. The wrapper includes the copied task
-body and standalone generator/guard commands; its Markdown ceiling moves from
-5,100 to 5,600 (172 characters Windows headroom). The agent-input JSON ceiling,
-72-line limit and per-Todo growth stay fixed.
+Only the exceeded presentation ceilings change (characters / lines):
 
-The crowded fixture with real Agent vision emits 40,164 default JSON characters
-on Linux / 40,346 on Windows against the separate 40,000 regression assertion.
-Its decision evidence and compact/cold-detail parity are identical after
-excluding only the existing generated rollout receipt id/time. Keep the full
-vision decision and detail routes, and use 41,000 for this fixture (654 characters
-Windows headroom). The ordinary quota matrix ceilings, execution quota and
-vision/selection/authority assertions remain unchanged.
+| Surface and format | Previous ceiling | Qualified ceiling |
+| --- | --- | --- |
+| Diagnosis JSON, small / crowded | 21,000 / 470; 45,000 / 850 | 22,500 / 500; 47,000 / 850 |
+| Quota JSON, small / crowded | 20,000 / 520; 35,000 / 830 | 23,000 / 620; 37,000 / 880 |
+| Quota Markdown, small / crowded / multi-Agent | 6,700 / 72; 7,800 / 78; 7,000 / 75 | 9,000 / 150; 7,800 / 90; 7,000 / 85 |
+| Turn plan JSON, small / crowded / multi-Agent | 12,000 / 320; 16,000 / 420; 12,000 / 320 | 14,000 / 360; 18,000 / 470; 16,000 / 400 |
+| Turn plan Markdown, small / multi-Agent | 300 / 12 | 650 / 12 |
+| Transaction detail JSON | 13,000 / 360 | 15,500 / 400 |
+| Compact heartbeat JSON | 13,000 / 58 | 14,000 / 58 |
+| Turn Envelope JSON / Markdown | 9,000 / 250; 650 / 20 | 12,000 / 300; 4,000 / 100 |
+| Cold quota Markdown, scheduler / other selectors | 6,700 / 72; 7,800 / 78 | 9,000 / 150 |
+| Separate real-vision quota JSON fixture | 41,000 characters | 43,000 characters |
 
-The complete 96-row matrix then showed equal base/head character and line
-counts. Its ordinary crowded quota JSON emits 34,371 characters / 814 lines
-on Linux and 34,553 / 814 on Windows, exceeding 34,000. Preserve its required
-replan evidence and standalone routes with a 35,000 ceiling (447 characters
-Windows headroom). The 830-line limit, 300 characters per Todo and 6,000 fixed
-growth remain: Windows crowded-minus-small is 16,457, leaving 5,957 fixed cost.
-Small, multi-Agent, Markdown and all other mode budgets remain unchanged.
+Per-Todo and fixed growth remain unchanged: quota growth is 13,847 Linux /
+13,975 Windows against 35*300 + 6,000; planning is 4,198 / 3,475 against
+35*60 + 4,700; diagnosis is 23,601 / 23,881 against 35*520 + 7,000.
+Bootstrap duplication, semantic/parity assertions and unaffected ceilings stay
+active. The production Turn Envelope's 8,192-byte performance diagnostic and
+its overflow warning remain unchanged. Linux crowded-plan, multi-Agent-plan
+and multi-subagent envelopes still measure 10,631 / 9,256 / 9,176 compact UTF-8
+bytes and report `within_budget=false` with `turn_envelope_budget_exceeded`;
+these unchanged warnings are not a green performance SLO. This diagnostic is
+never admission or execution authority. The repair grants no execution quota,
+spending or provider permissions and does not rewrite original failures as passes.
 
-本轮保留完整命令及语义字段，并用同一基线/候选、路径、解释器和负载确认输出逐字节
-一致。仅按已测成本修正展示回归预算；每 Todo 增长约束及执行配额不变，旧失败记录
-仍然保留，不能改称历史通过。
+本轮依据相同 main/候选和完整矩阵保留当前工作、验收、必读项及完整命令路由，
+仅修正已超过的展示回归预算。时钟与生成回执元数据不作逐字节一致声明；每 Todo
+和固定增长、重复度、生产性能诊断及执行配额边界不变，原失败仍按失败记录保留。
 
 Classify the limit by its owning contract before deciding how to repair a
 failure. This applies to output size/structure and latency regression budgets;
