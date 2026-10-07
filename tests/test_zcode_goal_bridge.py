@@ -204,10 +204,14 @@ def test_api_rejects_outside_authority_before_provider(authority, monkeypatch, c
     from loopx.zcode_goal_mode import api
     registry, _, _ = authority
     handler = Handler(registry, host="0.0.0.0" if case == "remote_server" else "127.0.0.1", allowed=case != "foreign_origin", body={"action": "bind"})
-    if case == "project_injection": handler.body["project"] = "elsewhere"
-    if case == "missing_action": handler.body = {}
-    if case == "invalid_cli": handler.body["cli_path"] = None
-    if case == "query": handler.path += "?registry=elsewhere"
+    if case == "project_injection":
+        handler.body["project"] = "elsewhere"
+    if case == "missing_action":
+        handler.body = {}
+    if case == "invalid_cli":
+        handler.body["cli_path"] = None
+    if case == "query":
+        handler.path += "?registry=elsewhere"
     monkeypatch.setattr(api, "zcode_goal_operation", lambda **kwargs: pytest.fail("rejected API request reached provider"))
     assert handler._dispatch_zcode_goal(handler.path.split("?")[0], apply=True)
     assert handler.sent[0][1]["status"] in {400, 403}
@@ -257,7 +261,8 @@ def test_api_get_and_post_share_canonical_bridge(authority, monkeypatch):
 @pytest.mark.parametrize("kind", ["missing", "desktop", "windows_shim"])
 def test_cli_binding_does_not_launch_unsupported_surface(tmp_path, kind):
     path = tmp_path / ("zcode.cmd" if kind == "windows_shim" else "zcode.exe")
-    if kind != "missing": path.write_text("", encoding="utf-8")
+    if kind != "missing":
+        path.write_text("", encoding="utf-8")
     if kind == "desktop":
         bundle = tmp_path / "resources/glm/zcode.cjs"
         bundle.parent.mkdir(parents=True)
@@ -432,7 +437,8 @@ def test_internal_guard_requires_known_action_and_validates_inactive_cleanup(aut
     command = [sys.executable, "-X", "utf8", "-B", "-m", "loopx.zcode_goal_mode.bridge", "--validate-binding"]
     def invoke(action):
         body = dict(request)
-        if action is not None: body["action"] = action
+        if action is not None:
+            body["action"] = action
         result = subprocess.run(command, input=json.dumps(body), encoding="utf-8", capture_output=True, timeout=15)
         return result.returncode, json.loads(result.stdout)
     for action in (None, "unknown", "bind", "start", "resume", "select_model"):

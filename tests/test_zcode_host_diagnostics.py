@@ -275,10 +275,11 @@ def test_probe_uses_disposable_storage_and_preserves_parent_environment(monkeypa
 
     assert result["status"] == "observed"
     metadata = json.loads(next(line for line in result["output"].splitlines() if line.startswith("{")))
+    disposable_root = Path(metadata["cwd"]).resolve()
     for name in ("ZCODE_HOME", "ZCODE_STORAGE_DIR", "ZCODE_DATA_BASE_DIR"):
-        assert metadata["env"][name] == metadata["cwd"]
+        assert Path(metadata["env"][name]).resolve() == disposable_root
     assert metadata["env"]["SYNTHETIC_METADATA_PATH"] == "safe-metadata"
-    assert not Path(metadata["cwd"]).exists()
+    assert not disposable_root.exists()
     assert diagnostics.os.environ["ZCODE_STORAGE_DIR"] == "existing-private-storage"
     assert metadata["stdin"] == ""
     assert "private-stderr-marker" not in json.dumps(diagnostics._public_probe(result))

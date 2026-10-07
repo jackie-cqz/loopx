@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from functools import partial
 from importlib.metadata import PackageNotFoundError, distribution
 import json
 import os
@@ -868,7 +869,8 @@ def collect_doctor(
             latest_promotion_readiness_event(selected_runtime_root)
         ),
     }
-    install_freshness = build_install_freshness(
+    freshness_projection = partial(
+        build_install_freshness,
         command_path=command_path,
         release_root=release_root,
         repo_root=repo_root,
@@ -876,18 +878,26 @@ def collect_doctor(
         release_manifest=release_manifest,
         comparison_source=comparison_source,
         freshness_source=freshness_source,
-        require_installed_skills=installed_skills_required,
         doctor_agent_type=canonical_agent_type,
         python_distribution=python_distribution,
+        now=datetime.now(timezone.utc),
     )
+    install_freshness = freshness_projection(require_installed_skills=installed_skills_required)
+    zcode_installation_requires_upgrade = False
     if zcode_skill_repair_command:
         install_freshness["skill_repair_command"] = zcode_skill_repair_command
-        if (
-            install_freshness.get("status") == "repair_recommended"
-            and not all(skill.get("required_phrases") for skill in skills.values())
+        # Reuse the installation owner without Skill admission: the aggregate
+        # classification reports only its first problem and can hide another repair.
+        zcode_installation_requires_upgrade = bool(
+            freshness_projection(require_installed_skills=False)["requires_upgrade"]
+        )
+        if command_path is not None and not all(
+            skill.get("required_phrases") for skill in skills.values()
         ):
+            surface_repair = zcode_skill_repair_command + "\nloopx doctor --agent-type zcode"
             install_freshness["upgrade_command"] = (
-                zcode_skill_repair_command + "\nloopx doctor --agent-type zcode"
+                install_freshness["upgrade_command"] + "\n" + surface_repair
+                if zcode_installation_requires_upgrade else surface_repair
             )
     externally_managed_skills = bool(
         install_freshness.get("externally_managed_skills")
@@ -1249,10 +1259,9 @@ def collect_doctor(
             "with the same ZCode home. User-owned files are preserved; resolve any reported "
             "name collision before installing. Filesystem checks do not verify runtime skill loading."
         )
-        facade_problem = not all(skill.get("required_phrases") for skill in skills.values())
         if (
             payload["ok"] and command_path is not None
-            and (not install_freshness.get("requires_upgrade") or facade_problem)
+            and not zcode_installation_requires_upgrade
         ):
             payload["fix"] = skill_fix
         else:

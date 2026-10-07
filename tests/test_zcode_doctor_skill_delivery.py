@@ -353,3 +353,76 @@ def test_current_zcode_facades_do_not_hide_release_package_version_mismatch(
     assert "--surface zcode" not in freshness["upgrade_command"]
     assert payload["fix"].startswith(generic["fix"])
     assert payload["skill_delivery"]["repair_command"] in payload["fix"][len(generic["fix"]):]
+
+
+@pytest.mark.parametrize("installation_problem", ["package_mismatch", "aged_release"])
+@pytest.mark.parametrize("facade_problem", ["missing", "stale"])
+def test_mixed_installation_and_facade_problems_keep_both_recovery_owners(
+    doctor_context: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    installation_problem: str, facade_problem: str,
+) -> None:
+    from loopx import __version__
+    from loopx.release_manifest import RELEASE_MANIFEST_FILENAME
+    _install(doctor_context)
+    entry = doctor_context / "skills/loopx/SKILL.md"
+    if facade_problem == "missing":
+        entry.unlink()
+    else:
+        text = entry.read_text(encoding="utf-8")
+        entry.write_text(text.replace("stop/gate rules", "ignore stopping conditions"), encoding="utf-8")
+    before = {path: path.read_bytes() for path in doctor_context.rglob("SKILL.md")}
+    release_root = (
+        tmp_path / "releases/20000101T000000Z"
+        if installation_problem == "aged_release" else tmp_path / "synthetic-release"
+    )
+    release_root.mkdir(parents=True)
+    manifest_version = __version__
+    if installation_problem == "package_mismatch":
+        manifest_version = "0.0.0" if __version__ != "0.0.0" else "0.0.1"
+    (release_root / RELEASE_MANIFEST_FILENAME).write_text(
+        json.dumps({"package": {"version": manifest_version}, "source": {"ref": "stable"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LOOPX_RELEASE_ROOT", str(release_root))
+    generic = doctor.collect_doctor()
+    payload = doctor.collect_doctor(agent_type="zcode")
+    freshness = payload["install_freshness"]
+    assert payload["ok"] is True
+    assert payload["skills"]["loopx"]["readback_status"] == facade_problem
+    assert freshness["status"] == "repair_recommended"
+    assert freshness["reason"] == "installed LoopX skills are missing or stale"
+    assert freshness["requires_upgrade"] is True
+    if installation_problem == "package_mismatch":
+        assert freshness["manifest_package_version_matches_runtime"] is False
+    else:
+        assert freshness["release_age_hours"] > doctor.INSTALL_FRESHNESS_STALE_HOURS
+    owner_command = doctor.no_clone_upgrade_command("stable", doctor_agent_type="zcode")
+    repair_command = payload["skill_delivery"]["repair_command"]
+    assert freshness["upgrade_command"].startswith(owner_command + "\n")
+    assert repair_command in freshness["upgrade_command"][len(owner_command):]
+    assert payload["fix"].startswith(generic["fix"] + "\nAfter restoring the LoopX installation/runtime, ")
+    assert repair_command in payload["fix"][len(generic["fix"]):]
+    markdown = doctor.render_doctor_markdown(payload)
+    assert owner_command in markdown and repair_command in markdown
+    assert before == {path: path.read_bytes() for path in doctor_context.rglob("SKILL.md")}
+
+    # Skill repair cannot settle an independent installation problem.
+    _install(doctor_context)
+    skills_repaired = doctor.collect_doctor(agent_type="zcode")
+    assert skills_repaired["skill_delivery"]["status"] == "ready"
+    assert skills_repaired["install_freshness"]["requires_upgrade"] is True
+    assert skills_repaired["install_freshness"]["upgrade_command"] == owner_command
+
+    repaired_release = tmp_path / "repaired-release"
+    repaired_release.mkdir()
+    (repaired_release / RELEASE_MANIFEST_FILENAME).write_text(
+        json.dumps({"package": {"version": __version__}, "source": {"ref": "stable"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LOOPX_RELEASE_ROOT", str(repaired_release))
+    recovered = doctor.collect_doctor(agent_type="zcode")
+    assert recovered["ok"] is True
+    assert recovered["skill_delivery"]["status"] == "ready"
+    assert all(skill["readback_status"] == "ready" for skill in recovered["skills"].values())
+    assert recovered["install_freshness"]["requires_upgrade"] is False
+    assert recovered["install_freshness"]["manifest_package_version_matches_runtime"] is True
