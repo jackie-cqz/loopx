@@ -1077,9 +1077,9 @@ def test_quota_cli_bounds_real_scale_vision_audit_and_keeps_cold_detail(
 
     assert default_exit_code == 0, default_text
     assert detail_exit_code == 0, detail_text
-    # Matched main/head retains admitted work and complete vision guidance:
-    # Windows emits 41,564 characters; 43k leaves bounded presentation headroom.
-    assert len(default_text) <= 43_000
+    # Pinned base/head emit 41,503 chars on the same 36-Todo / 12-run vision
+    # fixture. Keep complete decision semantics; 42k leaves 497 chars.
+    assert len(default_text) <= 42_000
     default_payload = json.loads(default_text)
     detail_payload = json.loads(detail_text)
     compact_audit = default_payload["vision_continuation_audit"]
@@ -1809,11 +1809,16 @@ def test_turn_envelope_cli_preserves_codex_app_scheduler_binding(
 
     assert exit_code == 0, text
     payload = json.loads(text)
-    assert shlex.split(payload["detail_ref"]["full_decision"]) == [
+    full_decision = shlex.split(payload["detail_ref"]["full_decision"])
+    # A cold read must preserve the complete originating source and host profile.
+    assert full_decision == [
         "loopx", "--registry", str(registry_path), "--runtime-root", str(runtime),
         "--format", "json", "quota", "should-run", "--goal-id", GOAL_ID,
         "--agent-id", AGENT_IDS[0], "--codex-app",
     ]
+    read_rc, read_text = _invoke_cli(full_decision[1:])
+    assert read_rc == 0, read_text
+    assert json.loads(read_text)["goal_id"] == GOAL_ID
 
 
 def test_quota_should_run_cli_actions_keep_explicit_runtime_root(
