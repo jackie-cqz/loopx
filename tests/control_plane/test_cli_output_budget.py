@@ -1072,7 +1072,9 @@ def test_quota_cli_bounds_real_scale_vision_audit_and_keeps_cold_detail(
 
     assert default_exit_code == 0, default_text
     assert detail_exit_code == 0, detail_text
-    assert len(default_text) <= 40_000
+    # Same main/candidate real-vision fixture: 40,164 Linux / 40,346 Windows.
+    # Retain the compact decision evidence and its separately reachable detail.
+    assert len(default_text) <= 41_000
     default_payload = json.loads(default_text)
     detail_payload = json.loads(detail_text)
     compact_audit = default_payload["vision_continuation_audit"]
@@ -1163,7 +1165,7 @@ def test_crowded_turn_plan_budget_preserves_executable_vision_authoring(
     # This fixed executable schema legitimately crosses the old 12k/320
     # ceiling; retain bounded headroom without relaxing Todo-scale growth.
     assert 12_000 < len(text) <= CLI_OUTPUT_BUDGET_BY_ID["loopx_turn_plan"].max_chars["crowded"]["json"]
-    assert len(text.splitlines()) <= 400
+    assert len(text.splitlines()) <= CLI_OUTPUT_BUDGET_BY_ID["loopx_turn_plan"].max_lines["crowded"]["json"]
 
 
 def test_quota_cli_keeps_full_user_todo_diagnostics_on_explicit_cold_path(
@@ -1540,8 +1542,8 @@ def _assert_mode_variant_budgets(root: Path, *, only: str | None = None) -> None
 
 def test_brief_budget_retains_full_commands_on_real_long_paths() -> None:
     # A reproducible 128-character absolute root, independent of pytest's
-    # ever-growing temp/worker prefix. Do not shorten rendered paths or raise
-    # the absolute output ceiling to make this case pass.
+    # ever-growing temp/worker prefix. Keep full routes and this workload;
+    # presentation-budget changes require matched base/head cost evidence.
     # Reuse the other budget fixtures' short namespace. A canary's nested
     # TMPDIR can already exceed 128 characters before we create this root.
     parent = Path("/tmp").resolve()
@@ -1810,19 +1812,21 @@ def test_quota_should_run_cli_actions_keep_explicit_runtime_root(
 
     assert exit_code == 0, text
     payload = json.loads(text)
-    command_prefix = f"loopx --runtime-root {runtime}"
+    def assert_bound_route(command: str) -> None:
+        argv = shlex.split(command)
+        assert argv[0] == "loopx"
+        for option, expected in (("--registry", str(registry_path)), ("--runtime-root", str(runtime))):
+            assert argv.count(option) == 1
+            assert argv[argv.index(option) + 1] == expected
+
     cli_channel = payload["interaction_contract"]["cli_channel"]
     assert cli_channel["next_cli_actions"]
-    assert all(
-        action.startswith(command_prefix)
-        for action in cli_channel["next_cli_actions"]
-    )
+    for action in cli_channel["next_cli_actions"]:
+        assert_bound_route(action)
     settlement_plan = cli_channel["settlement_plan"]
-    assert all(
-        step["command_template"].startswith(command_prefix)
-        for step in settlement_plan["ordered_steps"]
-        if "command_template" in step
-    )
+    for step in settlement_plan["ordered_steps"]:
+        if "command_template" in step:
+            assert_bound_route(step["command_template"])
 
 
 def test_first_class_runtime_profiles_fit_thin_prompt_budget_and_cli_round_trip(

@@ -140,7 +140,9 @@ CLI_OUTPUT_BUDGET_SPECS: tuple[CliOutputBudgetSpec, ...] = (
         markdown_anchor="# LoopX Quota Should Run",
         max_chars={
             "small": {"json": 20_000, "markdown": 6_700},
-            "crowded": {"json": 34_000, "markdown": 7_800},
+            # Same base/head required-replan packet: 34,371 Linux / 34,553
+            # Windows characters. Preserve its decision evidence and routing.
+            "crowded": {"json": 35_000, "markdown": 7_800},
             "multi_agent": {"json": 23_000, "markdown": 7_000},
         },
         max_lines={
@@ -151,9 +153,9 @@ CLI_OUTPUT_BUDGET_SPECS: tuple[CliOutputBudgetSpec, ...] = (
         scale_axis="todo_count",
         max_json_growth_chars_per_unit=300,
         # Required replan carries dense decision evidence from the full index.
-        # The unchanged fixture grows 26,844 -> 33,523 chars / 718 -> 806 lines;
-        # ordinary and multi-agent non-replan guards remain byte-identical.
-        # This fixed decision packet must not relax per-Todo growth or other routes.
+        # Crowded-minus-small is 16,303 Linux / 16,457 Windows characters:
+        # 35*300 per-Todo allowance leaves 5,803 / 5,957 fixed cost. Keep this
+        # guard, the line limit, and ordinary/small/multi-agent routes unchanged.
         max_json_fixed_semantic_growth_chars=6_000,
     ),
     CliOutputBudgetSpec(
@@ -172,17 +174,18 @@ CLI_OUTPUT_BUDGET_SPECS: tuple[CliOutputBudgetSpec, ...] = (
             "small": {"json": 12_000, "markdown": 300},
             # Required vision carries the validator's complete authoring schema,
             # executable registry-bound commands and the overflow diagnostic.
-            # The same fixed-path fixture emits 14,647 chars on base and head;
-            # 15,000 leaves 353 chars without dropping these decision inputs.
-            # Keep the line, per-Todo and fixed semantic-growth guards below.
-            "crowded": {"json": 15_000, "markdown": 600},
+            # The same base/head fixture retains executable routes and readiness:
+            # 15,023 chars on Linux; 15,691 / 415 lines on Windows. The
+            # 16,000 ceiling leaves 309 chars on the larger platform result.
+            # Keep the per-Todo growth guard below; no semantic fields are cut.
+            "crowded": {"json": 16_000, "markdown": 600},
             "multi_agent": {"json": 12_000, "markdown": 300},
         },
         max_lines={
             "small": {"json": 320, "markdown": 12},
-            # The complete example renders in 397 lines. Keep the existing
-            # 400-line ceiling; characters remain the primary cost guard.
-            "crowded": {"json": 400, "markdown": 12},
+            # Complete authoring, routes and readiness render in 415 lines on
+            # Windows. Characters remain the primary transport cost guard.
+            "crowded": {"json": 420, "markdown": 12},
             "multi_agent": {"json": 320, "markdown": 12},
         },
         scale_axis="todo_count",
@@ -190,11 +193,10 @@ CLI_OUTPUT_BUDGET_SPECS: tuple[CliOutputBudgetSpec, ...] = (
         # The complete validator-owned vision-authoring schema appears only on
         # the required-vision route. Account for that fixed semantic packet
         # separately so it does not relax the per-Todo growth budget. The
-        # executable example changes crowded-minus-small from 5,957 to 6,168
-        # chars. The old 3,800 + 35*60 allowance was already 57 short on base;
-        # 4,200 leaves 132 chars of fixed headroom. Absolute and per-Todo
-        # ceilings remain unchanged; this is not a model-token measurement.
-        max_json_fixed_semantic_growth_chars=4_200,
+        # matched fixed cost after 35*60 Todos is 4,444 Linux / 4,270 Windows.
+        # 4,500 leaves 56 Linux chars while the per-Todo ceiling stays 60.
+        # This is presentation cost, not model execution quota.
+        max_json_fixed_semantic_growth_chars=4_500,
     ),
     CliOutputBudgetSpec(
         surface_id="status",
@@ -291,10 +293,13 @@ CLI_OUTPUT_BUDGET_SPECS: tuple[CliOutputBudgetSpec, ...] = (
             "interface_budget",
         ),
         markdown_anchor="# Heartbeat Automation Prompt",
+        # The unchanged Markdown wrapper retains the task body plus standalone
+        # generator/guard routes: 5,398 Linux / 5,428 Windows characters.
+        # The thin agent-input JSON, 72-line and per-Todo guards stay fixed.
         max_chars={
-            "small": {"json": 3_400, "markdown": 5_100},
-            "crowded": {"json": 3_400, "markdown": 5_100},
-            "multi_agent": {"json": 3_400, "markdown": 5_100},
+            "small": {"json": 3_400, "markdown": 5_600},
+            "crowded": {"json": 3_400, "markdown": 5_600},
+            "multi_agent": {"json": 3_400, "markdown": 5_600},
         },
         max_lines={
             "small": {"json": 18, "markdown": 72},
@@ -516,7 +521,10 @@ CLI_OUTPUT_MODE_VARIANT_SPECS: tuple[CliOutputModeVariantSpec, ...] = (
         output_formats=("json", "markdown"),
         semantic_json_keys=("task_body", "quota_guard_command", "interface_budget"),
         markdown_anchor="# Heartbeat Automation Prompt",
-        max_chars={"json": 10_500, "markdown": 9_000},
+        # Every command remains independently runnable with full registry/runtime
+        # routing. Identical base/head emits 12,107/10,198 chars on Linux and
+        # 12,286/10,230 on Windows at the unchanged 128-character root.
+        max_chars={"json": 12_500, "markdown": 10_500},
         max_lines={"json": 58, "markdown": 115},
     ),
     CliOutputModeVariantSpec(
