@@ -2,6 +2,7 @@
 import {createHash} from "node:crypto";
 import {readFile} from "node:fs/promises";
 import {durableWriteJson} from "../control_plane/effect_runtime_io.ts";
+import {BARE_SHA256_PATTERN} from "../control_plane/content_digest.ts";
 import type {JsonObject} from "../control_plane/effect_program.ts";
 import type {NativeObservation, NativeRequest, QuotaObservation, ZCodeModelSelection, ZCodeGoalAction, ZCodeGoalReadback} from "./contract.ts";
 import {sameBinding, ZCodeGoalError, safeFailure} from "./contract.ts";
@@ -48,7 +49,7 @@ export async function readState(path: string): Promise<BindingState | null> {
       || (state.target_id !== null && (typeof state.target_id !== "string" || !state.target_id))
       || (state.last_execution_error !== undefined && state.last_execution_error !== "zcode_native_execution_failed")
       || (state.start_pending !== undefined && typeof state.start_pending !== "boolean")
-      || typeof state.objective_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(state.objective_sha256)) {
+      || typeof state.objective_sha256 !== "string" || !BARE_SHA256_PATTERN.test(state.objective_sha256)) {
       throw new ZCodeGoalError("Unsupported ZCode binding; inspect or remove it before binding");
     }
     return state;

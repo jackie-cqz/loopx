@@ -4,6 +4,7 @@ import {randomBytes} from "node:crypto";
 import {createServer, request as httpRequest} from "node:http";
 import {mkdir, readFile, unlink} from "node:fs/promises";
 import type {JsonObject} from "../control_plane/effect_program.ts";
+import {BARE_SHA256_PATTERN} from "../control_plane/content_digest.ts";
 import {dirname, isAbsolute, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {ZCODE_GOAL_ACTIONS, sameBinding, ZCodeGoalError, safeFailure, type NativeRequest, type ZCodeGoalReadback} from "./contract.ts";
@@ -97,7 +98,7 @@ async function readEndpoint(request: NativeRequest): Promise<Endpoint | null> {
   try {
     const value = JSON.parse(await readFile(paths(request).endpoint, "utf8")) as Endpoint;
     if (!Number.isInteger(value.port) || value.port < 1 || value.port > 65535
-      || typeof value.token !== "string" || !/^[a-f0-9]{64}$/.test(value.token) || !Number.isInteger(value.pid)) {
+      || typeof value.token !== "string" || !BARE_SHA256_PATTERN.test(value.token) || !Number.isInteger(value.pid)) {
       throw new ZCodeGoalError("Malformed ZCode controller endpoint");
     }
     return value;
