@@ -36,6 +36,13 @@ test("route planning shares claim exclusion, preserves legacy visibility and nev
       fact("monitor", {task_class: "continuous_monitor"}), fact("missing", {gate: true}),
       fact("gate", {gate: true, replan: true}), fact(""), fact("peer")]};
   const before = structuredClone(input);
+  assert.equal((projectTodoQuotaPlanning(input).lanes as JsonObject).gate_items, undefined);
+  assert.equal(projectTodoQuotaPlanning(input).frontier_deadline, undefined);
+  assert.throws(() => projectTodoQuotaPlanning({...input, current_time: "bad"}), /planning clock/);
+  assert.throws(() => projectTodoQuotaPlanning({...input, current_time: null}), /planning clock/);
+  const timed = projectTodoQuotaPlanning({...input, current_time: "2026-10-01T00:00:00Z"});
+  assert.deepEqual((timed.lanes as JsonObject).gate_items, []);
+  assert.equal(timed.frontier_deadline, null);
   const result = projectTodoQuotaPlanning(input), routes = result.route_lanes as JsonObject;
   const v3 = projectTodoQuotaPlanning({...input, schema_version: "todo_quota_planning_request_v3",
     selection: {...input.selection, observed_at: 100}});
@@ -290,4 +297,54 @@ test("quota v2 validates closure in the existing batch while retaining v0/v1 wir
   assert.deepEqual(route_lanes, {});
   assert.equal((source_completeness as JsonObject).status, "invalid");
   assert.equal(closure_intent, null);
+});
+
+
+function planningDeadline(monitors: JsonObject[], gates: JsonObject[], fields: JsonObject = {}) {
+  const items = [...monitors.map(payload => row(String(payload.todo_id),
+    {payload, task_class: "continuous_monitor", required: [], targets: []})), ...gates.map(payload => row(String(payload.todo_id),
+    {payload, task_class: "user_gate", gate: true, required: [], targets: []}))];
+  return projectTodoQuotaPlanning({schema_version: "todo_quota_planning_request_v2",
+    current_time: "2026-10-01T00:00:00Z", ...fields, selection: request(items, {available: []}),
+    source_contract: {}, route_items: [], handoff_items: [],
+    resume: {schema_version: "todo_resume_planning_request_v0", agent_id: "agent-a", item_limit: 8,
+      has_deferred_count: false, has_visible_deferred_count: false, deferred_count: null,
+      available_capabilities: null, sources: Object.fromEntries(["items", "backlog_items", "first_open_items",
+        "deferred_items", "deferred_resume_candidates", "resume_blocked_items", "monitor_open_items",
+        "current_agent_claimed_monitor_items", "claimed_monitor_open_items"].map(key => [key, []]))}});
+}
+test("the existing batch keeps full gate deadlines before transport caps, scope and equal-time source", () => {
+  const early = {todo_id: "early", next_due_at: "2026-10-01T08:01:00.000001+08:00"};
+  const monitors = [{todo_id: "expired", expires_at: "2026-10-01T00:00:00Z",
+    next_due_at: "2026-10-01T00:00:01Z"}, {todo_id: "past", next_due_at: "2026-10-01T00:00:00Z"}, early,
+    {...early, next_due_at: "2026-09-30T20:01:00.000001-04:00"}];
+  const gates = Array.from({length: 25}, (_, i) => ({todo_id: `gate_${i}`,
+    task_class: "user_gate", next_due_at: "2026-10-01T00:02:00Z"}));
+  gates.push({todo_id: "bad", task_class: "user_gate", next_due_at: "2026-02-30T00:00:00Z"});
+  const before = structuredClone({monitors, gates});
+  const result = planningDeadline(monitors, gates);
+  assert.deepEqual(result.frontier_deadline, {schema_version: "todo_frontier_deadline_v0", identity: "early",
+    source: "continuous_monitor", next_due_at: "2026-10-01T00:01:00.000001+00:00", candidate_count: 26});
+  assert.equal(((result.lanes as JsonObject).gate_items as JsonObject[]).length, 3);
+  assert.deepEqual({monitors, gates}, before);
+});
+test("planning clock retains fresh projection extensions and rechecks stale/raw dates precisely", () => {
+  const projection = {identity: "cached", source: "user_gate", next_due_at: "2026-10-01T08:01:00+08:00",
+    candidate_count: 7, extension: {retained: true}};
+  assert.deepEqual(planningDeadline([], [], {frontier_deadline: projection}).frontier_deadline, projection);
+  assert.deepEqual(planningDeadline([], [{index: 0, task_class: "user_action", next_due_at:
+    "2026-10-01T00:02:00Z"}], {frontier_deadline: projection, current_time: "2026-10-01T00:01:01Z"})
+    .frontier_deadline, {schema_version: "todo_frontier_deadline_v0", identity: "0", source: "user_action",
+      next_due_at: "2026-10-01T00:02:00+00:00", candidate_count: 1});
+  assert.equal(planningDeadline([], [{}]).frontier_deadline, null);
+  const timed = clockRequest([]);
+  assert.throws(() => projectTodoQuotaPlanning({...timed, current_time: "2026-10-01T00:00:00Z"}), /clocks must match/);
+  const current_time = "1970-01-01T00:01:40Z";
+  const combined = projectTodoQuotaPlanning({...timed, current_time});
+  assert.deepEqual(combined.handoff_lanes, projectTodoQuotaPlanning(timed).handoff_lanes);
+  assert.deepEqual((combined.lanes as JsonObject).monitor_schedule_gap_items, []);
+  assert.deepEqual((combined.lanes as JsonObject).gate_items, []);
+  assert.equal((planningDeadline([], [{title: "Review", next_due_at: "1969-12-31T23:59:59.000001Z"}],
+    {current_time: "1969-12-31T23:59:58Z"}).frontier_deadline as JsonObject).next_due_at,
+    "1969-12-31T23:59:59.000001+00:00");
 });

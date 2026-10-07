@@ -74,8 +74,47 @@ def test_future_projection_preserves_extra_fields_and_stale_projection_falls_bac
     assert todo_summary_frontier_deadline(summary, current_time=NOW)["source"] == "user_action"
 
 
+@pytest.mark.parametrize("user_gate_scope", [False, True])
+def test_quota_planning_keeps_gate_deadline_before_visibility_limits(monkeypatch, user_gate_scope):
+    from loopx.control_plane.todos import quota_summary
+    from loopx.control_plane.todos import quota_selection
+    monkeypatch.setattr(quota_selection, "now_utc", lambda: NOW)
+    gates = [{"todo_id": f"gate_{i}", "index": i + 1, "text": "Review the source",
+              "status": "open", "task_class": "user_gate", "blocks_agent": "agent-a",
+              "next_due_at": "2026-10-01T00:10:00Z"} for i in range(25)]
+    gates[-1]["next_due_at"] = "2026-10-01T08:01:00.000001+08:00"
+    gates.append({**gates[-1], "todo_id": "other_lane", "blocks_agent": "agent-b",
+                  "next_due_at": "2026-10-01T00:00:01Z"})
+    # Agent summaries use execution claims, User summaries use gate addressing.
+    if not user_gate_scope:
+        for gate in gates[:-1]:
+            gate["claimed_by"] = "agent-a"
+        gates[-1]["claimed_by"] = "agent-b"
+    original = json.loads(json.dumps(gates))
+    crossings = []
+    invoke = quota_selection.effect_runtime_result
+    def observed(method, params):
+        crossings.append(method)
+        return invoke(method, params)
+    monkeypatch.setattr(quota_selection, "effect_runtime_result", observed)
+    summary = quota_summary.summarize_user_todos_for_quota(
+        {"schema_version": "todo_summary_v0", "items": gates, "total_count": 26,
+         "open_count": 26, "done_count": 0, "source_section": "User Todo"},
+        agent_identity={"agent_id": "agent-a"}, filter_user_gate_blocks_agent=user_gate_scope)
+    assert len(summary["gate_open_items"]) == 3
+    monkeypatch.setattr("loopx.control_plane.runtime.time.now_utc", lambda: NOW)
+    compact = quota_summary.compact_quota_todo_summary_for_payload(summary)
+    assert compact["frontier_deadline"] == {
+        "schema_version": "todo_frontier_deadline_v0", "identity": "gate_24",
+        "source": "user_gate", "next_due_at": "2026-10-01T00:01:00.000001+00:00",
+        "candidate_count": 25}
+    assert gates == original
+    assert crossings == ["todo.quota_planning.project"]
+
+
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
-def test_installed_cli_keeps_full_source_deadline_after_compaction(tmp_path, monkeypatch, provider):
+@pytest.mark.parametrize("role", ["agent", "user"])
+def test_installed_cli_keeps_full_source_deadline_after_compaction(tmp_path, monkeypatch, provider, role):
     from loopx.control_plane.coordination.local_authority import read_canonical_todos_if_promoted
     from loopx.control_plane.coordination.runtime_shadow import build_todo_runtime_shadow_projection
 
@@ -93,6 +132,11 @@ def test_installed_cli_keeps_full_source_deadline_after_compaction(tmp_path, mon
         "text": "Validate remaining authorized work.", "status": "open", "done": False,
         "archive_state": "active", "source_section": "Agent Todo", "task_class": "advancement_task",
         "claimed_by": "agent-a", "action_kind": "validate", "priority": "P2"})
+    if role == "user":
+        for record in records[:-1]:
+            record.update(role="user", task_class="user_gate", source_section="User Todo",
+                          blocks_agent="agent-a")
+            record.pop("watch_only", None)
     projection = build_todo_runtime_shadow_projection(goal_id="goal-a", todos=records, handoff_mode="soft_claim")
     registry.write_text(json.dumps({"common_runtime_root": str(runtime), "goals": [{
         "id": "goal-a", "domain": "deadline-fixture", "repo": str(tmp_path), "state_file": state.name, "status": "active-read-only",
@@ -108,10 +152,13 @@ def test_installed_cli_keeps_full_source_deadline_after_compaction(tmp_path, mon
         capture_output=True, text=True, timeout=60)
     assert child.returncode == 0, child.stdout or child.stderr
     packet = json.loads(child.stdout)
-    summary = packet["agent_todo_summary"]
+    summary = packet[f"{role}_todo_summary"]
     assert summary["frontier_deadline"]["identity"] == "todo_monitor_23"
     assert summary["frontier_deadline"]["next_due_at"] == "2099-01-01T00:01:00+00:00"
-    assert "monitor_open_items" not in summary  # CLI omits this diagnostic lane entirely.
+    if role == "agent":
+        assert "monitor_open_items" not in summary  # CLI omits this diagnostic lane entirely.
+    else:
+        assert all(row["todo_id"] != "todo_monitor_23" for row in summary["gate_open_items"])
     assert packet["scheduler_hint"]["cold_path_detail"]["frontier_recheck"][
         "frontier_recheck_identity"] == "todo_monitor_23"
     assert read_canonical_todos_if_promoted(runtime_root=runtime, goal_id="goal-a") == before

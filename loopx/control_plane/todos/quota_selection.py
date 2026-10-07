@@ -6,7 +6,7 @@ from typing import Any
 
 from ..agents.profile import agent_profile_candidate_rank
 from ..effect_runtime import EffectRuntimeRejected, effect_runtime_result
-from ..runtime.time import now_utc
+from ..runtime.time import now_utc, parse_timestamp
 from .contract import (
     normalize_todo_claimed_by, normalize_todo_bound_agent, normalize_todo_blocks_agent,
     normalize_todo_excluded_agents, normalize_todo_global_gate,
@@ -70,13 +70,16 @@ def project_quota_planning(
     value: dict[str, Any], *, all_open_items: list[dict[str, Any]],
     source_open_count: Any, agent_identity: dict[str, Any] | None,
     filter_user_gate_blocks_agent: bool, available_capabilities: Any,
-    resolve_capacity: bool = False,
+    resolve_capacity: bool = False, current_time: str | None = None,
 ) -> dict[str, Any]:
     identity = agent_identity if isinstance(agent_identity, dict) else {}
     profile = identity.get("agent_profile")
     profile = profile if isinstance(profile, dict) and profile else None
     agent = normalize_todo_claimed_by(identity.get("agent_id"))
-    observed_at = now_utc().timestamp()
+    observed_now = now_utc() if current_time is None else parse_timestamp(current_time)
+    if observed_now is None:
+        raise ValueError("invalid quota planning clock")
+    observed_at = observed_now.timestamp()
     handoff_gates = todo_summary_handoff_gates(value)
 
     def encode(item: dict[str, Any]) -> dict[str, Any]:
@@ -111,6 +114,8 @@ def project_quota_planning(
     try:
         result = effect_runtime_result("todo.quota_planning.project", {
             "schema_version": "todo_quota_planning_request_v3",
+            "current_time": observed_now.isoformat(),
+            "frontier_deadline": value.get("frontier_deadline"),
             "route_items": build_todo_route_continuation_facts(value, handoff_gates=handoff_gates),
             "handoff_items": [{"display": gate,
                 "excluded": normalize_todo_excluded_agents(gate.get("excluded_agents"))}
@@ -137,6 +142,8 @@ def project_quota_planning(
         raise ValueError(str(exc)) from None
     if not isinstance(result, dict) or result.get("schema_version") != "todo_quota_planning_v0":
         raise RuntimeError("TypeScript Todo quota planning shape mismatch")
+    if not isinstance(result.get("lanes"), dict) or not isinstance(result["lanes"].get("gate_items"), list):
+        raise RuntimeError("TypeScript Todo quota planning gate lane missing")
     if not isinstance(result.get("source_completeness"), dict) or "closure_intent" not in result:
         raise RuntimeError("TypeScript Todo quota planning source contract missing")
     if isinstance(result["closure_intent"], dict):

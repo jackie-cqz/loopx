@@ -224,3 +224,34 @@ Python 独立判断。TS succession owner 负责生成和验证；Python 只传�
 
 覆盖 legacy 与 canonical 的 status、Todo 查询和 quota 摘要；展示预算保持原值。
 没有新增设置、权限或 writer，不改变 provider 默认值，也不宣称完成整 Goal 迁移。
+
+## Frontier deadlines before gate display limits
+
+Quota's existing typed planning batch now selects future deadlines from the
+complete addressed gate lane and Monitor lane before rendering limits. The
+public `frontier_deadline` shape stays `todo_frontier_deadline_v0`; expiry,
+UTC offsets, microseconds, deduplication and first equal-time source are retained.
+A gate shown later by priority can own the earliest transition: hiding it after
+three displayed gates must not postpone the scheduler's recheck. Other-Agent
+gates remain excluded by the existing scope rule.
+
+This intentionally corrects quota and scheduler readback for legacy and
+canonical File/SQLite records carrying future gate timestamps. It adds no RPC,
+setting, persisted field, provider default or migration requirement. Frontend
+and Lark views retain the same Core display fields and limits. Matching package
+rollback restores the previous discovery behavior without changing stored data.
+
+The batch uses the same explicit observation instant for v3 Monitor due/gap
+selection and frontier discovery; conflicting clock facts fail closed. Supported
+v0/v1/v2 requests retain their original untimed shape. The downstream scheduler
+retains its current-time validation of projected deadlines. Raw/stale-summary Python
+compatibility, bounded resume/handoff lanes and the live App wait qualification
+remain separate retirement work. A projected deadline never grants gate
+clearance, execution or Goal closure.
+
+quota 在既有 TS planning 批次中，先对完整且已按 Agent 范围筛选的 gate／Monitor
+来源计算未来截止点，再裁剪展示。后列 gate 不再因三项展示上限丢失最早唤醒；其他
+Agent 的 gate 仍被原有范围规则排除。保留时间偏移、微秒、过期、去重与同刻稳定顺序，
+公开 deadline 格式、展示预算、provider 默认与既有数据不变，不增加 RPC 或迁移要求。
+下游仍按当前时刻校验投影；旧／过期摘要的 Python 兼容逻辑、有界 resume/handoff
+来源和实际 App 等待态验收继续保留，不能据此宣称全部退役或 Goal 收尾。

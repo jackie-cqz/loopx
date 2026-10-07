@@ -1574,6 +1574,16 @@ actual callers have moved. [Operator contract](../../reference/reviewed-coordina
 
 ### Todo 摘要决策收口
 
+相邻截止点修复：Agent／User frontier 等待必须比较 UTC 时刻，保留裁剪前证据和
+quota 压缩、Monitor 等待、scheduler 接续三个真实调用方。此前独立 TS 读取虽保留
+语义，却让实测 warm scheduler 消费者更慢。现在复用既有 quota planning 批次，
+在展示上限前发现已按范围筛选的完整 gate／Monitor 截止点，不增加 crossing；与 v3
+Monitor due/gap 共用同一观察时刻，保留旧版 planning wire，删除 Python 的第二份
+gate 筛选。剩余 Python 当前时刻／原始摘要规则继续保留：有界 resume/handoff 来源
+和 scheduler 新鲜度还需要合入已有批次，并先验证同负载代价及安装态 File/SQLite
+负例，再删除。不要新增重复任务，也不要把规则迁移算作优化。默认 SQLite、完整 T4
+和真实 App 等待态验收仍开放。
+
 已选来源的计数、展示分配、最近完成时间顺序、编排候选位置与收尾证明，收口到一个
 TS 摘要批次；Python 保留旧格式解码、公开字段筛选及渲染。删除旧 Python claim 分配
 算法和汇总分支，用一个内部入口替换 lane／closure 两次调用，不保留无调用方的旧 wire。

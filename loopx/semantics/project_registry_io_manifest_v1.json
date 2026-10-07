@@ -2111,7 +2111,7 @@
     },
     {
       "site": "loopx/project_uninstall.py::<module>.uninstall_project::codec_read:load_registry#1",
-      "line": 245,
+      "line": 253,
       "column": 24,
       "kind": "codec_read",
       "api": "load_registry",
@@ -2119,8 +2119,8 @@
     },
     {
       "site": "loopx/project_uninstall.py::<module>.uninstall_project::codec_transaction:project_registry_transaction#1",
-      "line": 313,
-      "column": 14,
+      "line": 360,
+      "column": 18,
       "kind": "codec_transaction",
       "api": "project_registry_transaction",
       "classification": "codec_api"
