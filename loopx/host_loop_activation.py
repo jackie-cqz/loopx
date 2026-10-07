@@ -7,7 +7,7 @@ from .zcode_goal_mode import native_goal_activation
 from .agent_registry import normalize_registered_agents
 from .agy_goal_mode import AGY_ACCEPTED_INPUTS
 from .control_plane.scheduler.execution_context import SchedulerRuntimeProfile
-from .host_loop_activation_skill_facade import (
+from .hosts.skill_facade import (
     agy_cli_activation,
     cursor_agent_activation,
     gemini_cli_activation,
