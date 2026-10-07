@@ -78,7 +78,9 @@ FINDING_STATUSES = {
 }
 
 TITLE_LIMIT = 200
-SUMMARY_LIMIT = 1200
+# A writeback finding includes its revision, applicability, observation and
+# complete route decision. Bound display separately without clipping that scope.
+SUMMARY_LIMIT = 2000
 REF_LIMIT = 240
 MAX_EVIDENCE_REFS = 16
 MAX_TAGS = 8
