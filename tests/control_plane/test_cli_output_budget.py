@@ -1077,8 +1077,8 @@ def test_quota_cli_bounds_real_scale_vision_audit_and_keeps_cold_detail(
 
     assert default_exit_code == 0, default_text
     assert detail_exit_code == 0, detail_text
-    # Matched main/head retains admitted work and complete vision guidance:
-    # Windows emits 41,564 characters; 43k leaves bounded presentation headroom.
+    # Retain full preference-freshness and vision guidance alongside the
+    # separate cold-detail parity checks; this fixture keeps its 43k ceiling.
     assert len(default_text) <= 43_000
     default_payload = json.loads(default_text)
     detail_payload = json.loads(detail_text)
@@ -1170,8 +1170,8 @@ def test_crowded_turn_plan_budget_preserves_executable_vision_authoring(
     assert writeback["vision_authoring"]["schema_version"] == (
         "goal_vision_replan_contract_v0"
     )
-    # This fixed executable schema legitimately crosses the old 12k/320
-    # ceiling; retain bounded headroom without relaxing Todo-scale growth.
+    # Fresh context and the full executable schema carry fixed semantic cost;
+    # keep both complete without relaxing the independent Todo-scale growth.
     assert 12_000 < len(text) <= CLI_OUTPUT_BUDGET_BY_ID["loopx_turn_plan"].max_chars["crowded"]["json"]
     assert len(text.splitlines()) <= CLI_OUTPUT_BUDGET_BY_ID["loopx_turn_plan"].max_lines["crowded"]["json"]
 
