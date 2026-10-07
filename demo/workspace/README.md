@@ -25,7 +25,7 @@ Only a new empty directory or this demo's matching manifest is accepted. Prepare
 | Home Energy Buying Guide | 12 source cards, three household profiles, 27 tariff/efficiency combinations, conflicting assumptions, five-section editorial plan | Cost assumptions; publication approval |
 | Riverside Neighborhood Website | Six pages, 18-route inventory, 24 accessibility criteria, navigation/form review findings, content permissions, rollback and handoff | Content freeze; deployment approval |
 
-Each project has seven replayed completion checkpoints, five ready tasks, four blocked tasks and two deferred follow-ups. Dependency notes retain predecessor IDs; deferred tasks use real `todo_done` resume conditions. Two watch-only monitors have cadence and next-due metadata. No scheduler or live Agent is started by the demo.
+Each project has seven replayed completion checkpoints, five ready tasks, four blocked tasks and two deferred follow-ups. Checkpoints acquire a real hard lease and complete through the canonical Todo owner, which releases that lease atomically. Dependency notes retain predecessor IDs; deferred tasks use real `todo_done` resume conditions. Two watch-only monitors have cadence and next-due metadata. No scheduler or live Agent is started by the demo.
 
 Switch Board/List, filter by Agent, expand completed history, inspect the owner decisions and scheduled watches. `BRIEF.md`, `working-table.csv`, `calculations.json` and `DELIVERY-PLAN.md` preserve the planning inputs and dependencies. The energy sensitivity table and event contingency are calculated when preparing the workspace.
 
@@ -42,7 +42,7 @@ Refresh the UI afterward. Only that decision and its direct blocked successor ar
 
 These are authored scenario replays using real LoopX APIs and state transitions, not customer case studies or receipts of live Agent execution. Natural project titles keep the interface readable; the manifest and completion evidence retain provenance. Source-card inventories and website checklists are planning inputs, not claims of external research or executed website tests. Event money is a project budget, not model spending.
 
-The demo does not import personal registries, session history or credentials, and does not sync into the global registry. Prepare, advance and serve run in a separate HOME/CODEX_HOME with a minimal environment; even preparation never discovers personal default registries. The loopback server uses unavailable Agent/Lark binaries. Chat and Lark connection errors are intentional isolation and do not qualify live IM behavior. Stop with Ctrl-C.
+The demo does not import personal registries, session history or credentials, and does not sync into the global registry. Prepare, advance and serve run in a separate HOME (USERPROFILE on Windows) and CODEX_HOME with a minimal environment; even preparation never discovers personal default registries. The loopback server uses unavailable Agent/Lark binaries. Chat and Lark connection errors are intentional isolation and do not qualify live IM behavior. Stop with Ctrl-C.
 
 This remains a source-checkout demo under `demo/`, outside the installed wheel and capability catalog. Screenshots and recordings belong in ignored `output/playwright/`. Keep real operating statistics separately timestamped with their counting scope.
 
