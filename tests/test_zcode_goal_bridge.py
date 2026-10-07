@@ -66,6 +66,173 @@ def test_invalid_authority_cannot_launch_provider(authority, monkeypatch, mutati
         bridge.zcode_goal_operation(action="start", registry_path=registry, goal_id="delivery", agent_id="zcode-worker")
 
 
+@pytest.mark.parametrize("profiles_as_list", [False, True])
+def test_provider_eligibility_reuses_binding_rule_and_registration_fallbacks(authority, monkeypatch, profiles_as_list):
+    registry, _, payload = authority
+    goal = payload["goals"][0]
+    profiles = {
+        "zcode-looking": {"agent_type": "codex-cli"},
+        "host-unset": {"scope_summary": "Advisory profile"},
+        "build-worker": {"host_surface": "z-code"},
+        "invalid-host": {"agent_type": 42},
+        "unregistered": {"agent_type": "zcode"},
+    }
+    goal["coordination"] = {
+        "registered_agents": ["zcode-looking", "host-unset"],
+        "agent_profiles": [{"agent_id": agent_id, **profile} for agent_id, profile in profiles.items()]
+        if profiles_as_list else profiles,
+    }
+    goal["registered_agents"] = ["build-worker", "invalid-host"]
+    goal["spawn_policy"] = {"registered_agents": ["host-unset"]}
+    registry.write_text(json.dumps(payload), encoding="utf-8")
+    before = registry.read_bytes()
+    monkeypatch.setattr(bridge, "_node_command", lambda: pytest.fail("metadata eligibility must not discover or launch a host"))
+    assert bridge.zcode_goal_eligible_agent_ids(goal) == ["host-unset", "build-worker"]
+    for agent_id in ("host-unset", "build-worker"):
+        assert bridge.validate_zcode_binding(registry_path=registry, goal_id="delivery", agent_id=agent_id)["agent_id"] == agent_id
+    for agent_id in ("zcode-looking", "invalid-host"):
+        with pytest.raises(bridge.ZCodeGoalBridgeError, match="different host"):
+            bridge.validate_zcode_binding(registry_path=registry, goal_id="delivery", agent_id=agent_id)
+    with pytest.raises(ValueError, match="not registered"):
+        bridge.validate_zcode_binding(registry_path=registry, goal_id="delivery", agent_id="unregistered")
+    assert registry.read_bytes() == before
+
+
+def test_pure_other_host_goal_has_no_provider_candidates(authority):
+    _, _, payload = authority
+    goal = payload["goals"][0]
+    goal["coordination"]["agent_profiles"]["zcode-worker"]["agent_type"] = "codex-cli"
+    assert bridge.zcode_goal_eligible_agent_ids(goal) == []
+
+
+def test_canonical_source_observer_reuses_existing_read_and_runs_on_caller(authority, tmp_path, monkeypatch):
+    import threading
+    from loopx.control_plane.runtime import runtime_projection_route as routes
+
+    registry, project, payload = authority
+    source_goal = payload["goals"][0]
+    source_goal["coordination"] = {"agent_profiles": {"plain-worker": {"scope_summary": "Advisory"}}}
+    source_goal["registered_agents"] = ["plain-worker"]
+    source_goal["spawn_policy"] = {"registered_agents": ["fallback-worker"]}
+    payload["goals"].append({**source_goal, "id": "second"})
+    registry.write_text(json.dumps(payload), encoding="utf-8")
+    shared = {"registry_role": "global-local", "common_runtime_root": str(tmp_path / "shared-runtime"), "goals": [
+        {"id": goal_id, "source_registry": str(registry), "repo": str(project),
+         "coordination": {"registered_agents": ["stale-other"], "agent_profiles": {"stale-other": {"agent_type": "codex-cli"}}}}
+        for goal_id in ("delivery", "second")
+    ]}
+    reads = []
+    read_source = routes._read_source_registry_with_deadline
+    def read(path, **kwargs):
+        reads.append(path)
+        return read_source(path, **kwargs)
+    monkeypatch.setattr(routes, "_read_source_registry_with_deadline", read)
+    monkeypatch.setattr(bridge, "_node_command", lambda: pytest.fail("eligibility must not probe a host"))
+    kwargs = {"registry_path": tmp_path / "shared.json", "runtime_root": tmp_path / "shared-runtime", "goal_id": None, "registry": shared}
+    baseline = routes._source_routes_for_registry(**kwargs)
+    assert reads == [registry]
+    reads.clear()
+    observed = {}
+    caller = threading.get_ident()
+    def observe(goal_id, goal):
+        assert threading.get_ident() == caller
+        observed[goal_id] = bridge.zcode_goal_eligible_agent_ids(goal) if goal is not None else []
+    projected = routes._source_routes_for_registry(**kwargs, source_goal_observer=observe)
+    assert projected == baseline
+    assert reads == [registry], "Chat eligibility must reuse the existing once-per-source read"
+    assert observed == {"delivery": ["plain-worker", "fallback-worker"], "second": ["plain-worker", "fallback-worker"]}
+    for agent_id in observed["delivery"]:
+        assert bridge.validate_zcode_binding(registry_path=registry, goal_id="delivery", agent_id=agent_id)["agent_id"] == agent_id
+
+
+@pytest.mark.parametrize("failure", ["missing", "unreadable", "timeout", "duplicate", "absent"])
+def test_canonical_source_observer_never_uses_stale_projected_profiles(authority, tmp_path, monkeypatch, failure):
+    from loopx.control_plane.runtime import runtime_projection_route as routes
+
+    registry, _, payload = authority
+    shared = {"registry_role": "global-local", "common_runtime_root": str(tmp_path / "shared-runtime"), "goals": [{
+        "id": "delivery", "source_registry": str(registry),
+        "coordination": {"registered_agents": ["projected-worker"]},
+    }]}
+    if failure in ("missing", "unreadable", "timeout"):
+        monkeypatch.setattr(routes, "_read_source_registry_with_deadline", lambda *args, **kwargs: (None, "source_registry_" + failure))
+    else:
+        payload["goals"] = payload["goals"] * 2 if failure == "duplicate" else []
+        registry.write_text(json.dumps(payload), encoding="utf-8")
+    seen = []
+    routes._source_routes_for_registry(
+        registry_path=tmp_path / "shared.json", runtime_root=tmp_path / "shared-runtime", goal_id=None,
+        registry=shared, source_goal_observer=lambda goal_id, goal: seen.append((goal_id, goal)),
+    )
+    assert seen == [("delivery", None)]
+
+
+def test_actual_chat_status_projects_canonical_host_eligibility_without_extra_reads(authority, tmp_path, monkeypatch):
+    import threading
+    from http.server import ThreadingHTTPServer
+    from urllib.request import urlopen
+    from loopx.chat_server import ChatRequestHandler
+    from loopx.control_plane.runtime import runtime_projection_route as routes
+    from loopx.status import collect_status
+
+    registry, project, payload = authority
+    goal = payload["goals"][0]
+    goal["coordination"]["agent_profiles"]["zcode-worker"]["agent_type"] = "codex-cli"
+    registry.write_text(json.dumps(payload), encoding="utf-8")
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(exist_ok=True)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), ChatRequestHandler)
+    for key, value in {"registry_path": registry, "runtime_root_override": None, "runtime_root": runtime,
+                       "scan_roots": [project], "limit": 8, "selected_goal_id": None, "verbose": False}.items():
+        setattr(server, key, value)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setattr(bridge, "_node_command", lambda: pytest.fail("Chat metadata must not discover or launch ZCode"))
+    def read_candidates():
+        with urlopen(f"http://127.0.0.1:{server.server_port}/status.json", timeout=30) as response:
+            status = json.load(response)
+        return next(row for row in status["run_history"]["goals"] if row["id"] == "delivery")["zcode_goal_eligible_agent_ids"]
+    try:
+        assert read_candidates() == []
+        goal["registered_agents"] = ["native-worker", "host-unset"]
+        goal["coordination"]["agent_profiles"].update({
+            "native-worker": {"host_surface": "z-code"}, "host-unset": {"scope_summary": "Advisory"},
+        })
+        registry.write_text(json.dumps(payload), encoding="utf-8")
+        assert read_candidates() == ["native-worker", "host-unset"]
+        for agent_id in ("native-worker", "host-unset"):
+            assert bridge.validate_zcode_binding(registry_path=registry, goal_id="delivery", agent_id=agent_id)["agent_id"] == agent_id
+        shared = tmp_path / "shared.json"
+        shared.write_text(json.dumps({"schema_version": "0.2", "registry_role": "global-local",
+            "common_runtime_root": str(tmp_path / "shared-runtime"), "goals": [{
+                **goal, "source_registry": str(registry), "registered_agents": ["forged-native"],
+                "coordination": {"registered_agents": ["forged-native"], "agent_profiles": {"forged-native": {"agent_type": "zcode"}}},
+            }]}), encoding="utf-8")
+        server.registry_path = shared
+        assert read_candidates() == ["native-worker", "host-unset"]
+        reads = []
+        original_read = routes._read_source_registry_with_deadline
+        def counted(path, **kwargs):
+            reads.append(path)
+            return original_read(path, **kwargs)
+        monkeypatch.setattr(routes, "_read_source_registry_with_deadline", counted)
+        kwargs = {"registry_path": shared, "runtime_root_override": None, "scan_roots": [project], "limit": 8, "include_public_boundary_scan": False}
+        baseline = collect_status(**kwargs)
+        baseline_reads = list(reads)
+        assert all("zcode_goal_eligible_agent_ids" not in row for row in baseline["run_history"]["goals"])
+        reads.clear()
+        current = collect_status(**kwargs, include_zcode_goal_eligibility=True)
+        assert reads == baseline_reads, "The Chat-only projection adds zero canonical source reads"
+        assert next(row for row in current["run_history"]["goals"] if row["id"] == "delivery")["zcode_goal_eligible_agent_ids"] == ["native-worker", "host-unset"]
+        registry.write_text("{invalid-json", encoding="utf-8")
+        assert read_candidates() == []
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+    assert not thread.is_alive()
+
+
 def test_project_and_goal_instance_are_consistency_assertions(authority, tmp_path):
     with pytest.raises(ValueError, match="canonical"):
         _validate(authority, project=tmp_path)

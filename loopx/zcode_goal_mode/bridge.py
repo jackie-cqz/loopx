@@ -11,7 +11,7 @@ import subprocess
 import sys
 from typing import Any
 
-from ..agent_registry import agent_profile_for_goal, require_registered_agent_id
+from ..agent_registry import agent_profile_for_goal, registered_agent_ids_for_goal, require_registered_agent_id
 from ..control_plane.goals.activation import goal_is_stopped
 from ..control_plane.goals.goal_ref_validation import exact_goal_ref, require_goal_id
 from ..control_plane.runtime.goal_project_route import resolve_goal_project_route
@@ -32,6 +32,25 @@ class ZCodeGoalBridgeError(ValueError):
         super().__init__(message)
         self.code = code
         self.status = status
+
+
+def _zcode_host_compatible(profile: dict[str, Any] | None) -> bool:
+    declared_host = (profile or {}).get("agent_type") or (profile or {}).get("host_surface")
+    # An advisory profile need not declare a host. Binding remains an explicit choice.
+    if declared_host is None:
+        return True
+    if not isinstance(declared_host, str):
+        return False
+    try:
+        return normalize_agent_type(declared_host) == "zcode"
+    except ValueError:
+        return False
+
+
+def zcode_goal_eligible_agent_ids(goal: dict[str, Any]) -> list[str]:
+    """Project registered actors compatible with this host, without probing it."""
+    return [agent_id for agent_id in registered_agent_ids_for_goal(goal)
+            if _zcode_host_compatible(agent_profile_for_goal(goal, agent_id))]
 
 
 def validate_zcode_binding(
@@ -74,9 +93,7 @@ def validate_zcode_binding(
         registry_path=source_registry, goal_id=goal_id, agent_id=agent_id, field="agent_id",
     )
     profile = agent_profile_for_goal(goal, normalized_agent)
-    declared_host = (profile or {}).get("agent_type") or (profile or {}).get("host_surface")
-    # Advisory profiles need no host field. Explicit bind chooses this provider for a registered actor.
-    if declared_host is not None and (not isinstance(declared_host, str) or normalize_agent_type(declared_host) != "zcode"):
+    if not _zcode_host_compatible(profile):
         raise ZCodeGoalBridgeError("The registered Agent explicitly declares a different host.")
     if not canonical_project.is_dir():
         raise ZCodeGoalBridgeError("The canonical Goal project is unavailable.")

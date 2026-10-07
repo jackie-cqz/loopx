@@ -535,7 +535,7 @@
     },
     {
       "site": "loopx/chat_status_api.py::<module>.ChatStatusRequestMixin._status::codec_read:load_registry#2",
-      "line": 179,
+      "line": 180,
       "column": 21,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1623,7 +1623,7 @@
     },
     {
       "site": "loopx/control_plane/runtime/runtime_projection_route.py::<module>._read_source_registry_with_deadline.read::codec_read:load_registry#1",
-      "line": 578,
+      "line": 587,
       "column": 23,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1631,7 +1631,7 @@
     },
     {
       "site": "loopx/control_plane/runtime/runtime_projection_route.py::<module>._source_routes_for_registry::codec_read:load_registry#1",
-      "line": 514,
+      "line": 515,
       "column": 20,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1639,7 +1639,7 @@
     },
     {
       "site": "loopx/control_plane/runtime/runtime_projection_route.py::<module>.collect_runtime_projection_route_diagnostics::codec_read:load_registry#1",
-      "line": 622,
+      "line": 633,
       "column": 20,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1679,7 +1679,7 @@
     },
     {
       "site": "loopx/control_plane/status/collection.py::<module>.collect_status::codec_read:load_registry#1",
-      "line": 99,
+      "line": 100,
       "column": 16,
       "kind": "codec_read",
       "api": "load_registry",
@@ -2327,7 +2327,7 @@
     },
     {
       "site": "loopx/zcode_goal_mode/bridge.py::<module>.validate_zcode_binding::codec_read:load_registry#1",
-      "line": 48,
+      "line": 67,
       "column": 16,
       "kind": "codec_read",
       "api": "load_registry",

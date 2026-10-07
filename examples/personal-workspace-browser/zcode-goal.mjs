@@ -19,6 +19,7 @@ export const zcodeGoalScenario = {
     let creationWitness = "browser-generation-A";
     let modelRequests = 0;
     let heldReadback;
+    let heldAgentId = "zcode-primary";
     let primaryReadStarted;
     let primaryReadObserved;
     const resultFor = agentId => {
@@ -36,7 +37,8 @@ export const zcodeGoalScenario = {
     };
     const context = await openWorkspacePage(browser, url, {collectCoverage,
       async beforeGoto(api, page) {
-        api.registeredAgentsByGoal = {"loopx-meta": ["zcode-primary", "zcode-secondary"]};
+        api.registeredAgentsByGoal = {"loopx-meta": ["zcode-looking"]};
+        api.zcodeEligibleAgentsByGoal = {"loopx-meta": []};
         await page.route("**/api/goals/*/agents/*/zcode-goal", async route => {
           const request = route.request();
           const pathname = new URL(request.url()).pathname;
@@ -72,7 +74,7 @@ export const zcodeGoalScenario = {
               }
             }
             if (body.action === "stop") Object.assign(state, {connected: false, started: false, status: null, running: false, actions: ["bind", "status"]});
-          } else if (agentId === "zcode-primary" && heldReadback) {
+          } else if (agentId === heldAgentId && heldReadback) {
             const release = heldReadback;
             const stale = resultFor(agentId);
             primaryReadObserved();
@@ -90,12 +92,21 @@ export const zcodeGoalScenario = {
       await page.getByRole("navigation", {name: "Goal 视图"}).getByRole("button", {name: "概览", exact: true}).click();
       await page.getByRole("button", {name: "Goal 信息", exact: true}).click();
       const control = page.locator(".personal-zcode-goal");
+      assert.equal(await control.count(), 0, "A pure other-host Goal must not advertise ZCode controls");
+      assert.equal(calls.length, 0, "An ineligible Goal must never probe ZCode");
+      context.api.registeredAgentsByGoal = {"loopx-meta": ["zcode-looking", "zcode-primary", "zcode-secondary"]};
+      context.api.zcodeEligibleAgentsByGoal = {"loopx-meta": ["zcode-primary", "zcode-secondary"]};
+      await page.getByRole("button", {name: "刷新状态", exact: true}).click();
       await control.waitFor();
       assert.equal(calls.length, 0, "Collapsed opt-in controls must not probe or mutate ZCode");
       await control.locator(":scope > summary").click();
       await control.getByRole("button", {name: "绑定 CLI", exact: true}).waitFor();
       await page.waitForFunction(() => !document.querySelector(".personal-zcode-agent")?.getAttribute("aria-busy")?.includes("true"));
       assert.equal(calls.filter(call => call.body).length, 0, "Readback must not bind or execute a model");
+      const agentPicker = control.getByRole("combobox", {name: "已注册 Agent"});
+      assert.deepEqual(await agentPicker.locator("option").evaluateAll(options => options.map(option => option.value)), ["zcode-primary", "zcode-secondary"], "Only backend-eligible candidates belong in a mixed Goal's selector");
+      assert.equal(await agentPicker.inputValue(), "zcode-primary", "The default must skip the first registered but ineligible Agent");
+      assert.equal(calls.every(call => call.agentId !== "zcode-looking"), true, "Agent names cannot grant provider eligibility");
       const cli = control.getByRole("textbox", {name: "CLI 路径"});
       await cli.fill("missing-zcode");
       await control.getByRole("button", {name: "绑定 CLI", exact: true}).click();
@@ -171,6 +182,7 @@ export const zcodeGoalScenario = {
       await control.getByRole("combobox", {name: "已注册 Agent"}).selectOption("zcode-secondary");
       await control.getByText("未绑定", {exact: true}).waitFor();
       releasePrimary();
+      heldReadback = null;
       await page.waitForTimeout(100);
       assert.equal(await control.getByText("正在运行", {exact: true}).count(), 0, "An old Agent response cannot populate the new selection");
       assert.equal(await control.getByRole("button", {name: "启动", exact: true}).isDisabled(), true);
@@ -178,9 +190,35 @@ export const zcodeGoalScenario = {
       await control.locator(":scope > summary").scrollIntoViewIfNeeded();
       assert(await control.evaluate(element => element.scrollWidth <= element.clientWidth), "Native controls must fit the mobile drawer");
       await page.screenshot({path: resolve(outputDir, "zcode-goal-mobile.png"), animations: "disabled"});
+      await page.setViewportSize({width: 1512, height: 982});
+      let releaseRemoved;
+      heldAgentId = "zcode-secondary";
+      heldReadback = new Promise(resolveWait => {releaseRemoved = resolveWait;});
+      primaryReadStarted = new Promise(resolveWait => {primaryReadObserved = resolveWait;});
+      await control.getByRole("button", {name: "回读状态", exact: true}).click();
+      await primaryReadStarted;
+      context.api.registeredAgentsByGoal = {"loopx-meta": ["zcode-looking"]};
+      context.api.zcodeEligibleAgentsByGoal = {"loopx-meta": []};
+      const callsAtRemoval = calls.length;
+      await page.getByRole("button", {name: "刷新状态", exact: true}).click();
+      await control.waitFor({state: "detached"});
+      releaseRemoved();
+      heldReadback = null;
+      await page.waitForTimeout(100);
+      assert.equal(await control.count(), 0, "Removing the selected Agent's eligibility discards native controls and any pending receipt");
+      assert.equal(calls.length, callsAtRemoval, "A removed Agent must cause no further native status or operation calls");
+      context.api.registeredAgentsByGoal = {"loopx-meta": ["zcode-looking", "zcode-secondary"]};
+      context.api.zcodeEligibleAgentsByGoal = {"loopx-meta": ["zcode-secondary"]};
+      await page.getByRole("button", {name: "刷新状态", exact: true}).click();
+      await control.waitFor();
+      assert.equal(calls.length, callsAtRemoval, "A newly compatible advisory Agent remains an explicit, collapsed entry");
+      await control.locator(":scope > summary").click();
+      await control.getByText("未绑定", {exact: true}).waitFor();
+      assert.equal(await control.getByRole("button", {name: "启动", exact: true}).isDisabled(), true, "A late removed-Agent receipt cannot authorize a new panel");
+      assert.deepEqual(await control.getByRole("combobox", {name: "已注册 Agent"}).locator("option").evaluateAll(options => options.map(option => option.value)), ["zcode-secondary"]);
       assert.deepEqual(calls.filter(call => call.body).map(call => call.body.action), ["bind", "bind", "select_model", "start", "start", "pause", "resume", "stop"]);
       assert.deepEqual(context.errors.filter(message => !/server responded with a status of 409/.test(message)), []);
-      return {coverageEntries: await context.close(), note: "Packaged Goal drawer proves explicit binding and model/reasoning selection, all native controls, unavailable path recovery, quota action gating, same-alias stale-write rejection before models, explicit native execution failure and wrong-context receipt recovery and stale Agent response isolation using a stateful transport fixture."};
+      return {coverageEntries: await context.close(), note: "Packaged Goal drawer consumes backend eligibility: pure other-host entries stay hidden with zero probes, mixed candidates and defaults are filtered, advisory compatibility remains explicit, and removal fences late receipts. It proves explicit binding and model/reasoning selection, all native controls, unavailable path recovery, quota action gating, same-alias stale-write rejection before models, explicit native execution failure and wrong-context receipt recovery and stale Agent response isolation using a stateful transport fixture."};
     } catch (error) {
       await context.close();
       throw error;

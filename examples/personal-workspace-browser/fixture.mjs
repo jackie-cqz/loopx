@@ -561,6 +561,10 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
       if (state.registeredAgentsByGoal?.[fixtureGoal.id]) {
         fixtureGoal.coordination = {...fixtureGoal.coordination, registered_agents: state.registeredAgentsByGoal[fixtureGoal.id]};
       }
+      // This is the backend's provider admission projection; browser fixtures never infer hosts from names.
+      if (state.zcodeEligibleAgentsByGoal?.[fixtureGoal.id]) {
+        fixtureGoal.zcode_goal_eligible_agent_ids = state.zcodeEligibleAgentsByGoal[fixtureGoal.id];
+      }
       if (state.goalSubagentConfigurationEnabled) {
         fixtureGoal.spawn_policy = projectedSubagentConfiguration(fixtureGoal.id, fixtureGoal.spawn_policy);
       } else {

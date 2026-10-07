@@ -1085,6 +1085,7 @@ function buildPersonalHomeModel(
       agentLaneCount: goalAgentLanes.length,
       agentLanes: goalAgentLanes,
       registeredAgentIds,
+      zcodeGoalEligibleAgentIds: goal.zcode_goal_eligible_agent_ids,
       agentLabel: agentRow?.agentId,
       agentSentence: personalAgentSentence(payload, row, state, t),
       agentTodos: [...goalAgentTodos, ...agentTodoFacts.recentCompleted],

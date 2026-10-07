@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchZCodeGoal, updateZCodeGoal } from "../../data/chat";
+import { fetchZCodeGoal, updateZCodeGoal } from "../../data/zcode-goal";
 import type { ZCodeGoalAction, ZCodeGoalReadback, ZCodeModelSelection } from "../../../../../../loopx/zcode_goal_mode/contract.js";
 import { useWorkspaceI18n, type WorkspaceTranslate } from "./i18n";
 import type { WorkspaceGoal } from "./personal-workspace-model";
@@ -12,16 +12,17 @@ function zcodeReason(reason: string | undefined, t: WorkspaceTranslate) {
 export function ZCodeGoalControl({goal, readOnly}: {goal: WorkspaceGoal; readOnly: boolean}) {
   const {t} = useWorkspaceI18n();
   const [opened, setOpened] = useState(false);
-  const registeredIds = goal.registeredAgentIds ?? [];
-  const [agentId, setAgentId] = useState(registeredIds[0] ?? "");
-  const selectedAgent = registeredIds.includes(agentId) ? agentId : registeredIds[0] ?? "";
+  const eligibleAgentIds = goal.zcodeGoalEligibleAgentIds ?? [];
+  const [agentId, setAgentId] = useState(eligibleAgentIds[0] ?? "");
+  const selectedAgent = eligibleAgentIds.includes(agentId) ? agentId : eligibleAgentIds[0] ?? "";
+  if (eligibleAgentIds.length === 0) return null;
   return <details className="personal-detail-card personal-zcode-goal" onToggle={event => setOpened(event.currentTarget.open)}>
     <summary>{t("zcode.title")}</summary>
     {opened ? <>
       <p>{t("zcode.scope")}</p>
-      {readOnly ? <p role="status">{t("zcode.remote")}</p> : registeredIds.length === 0 ? <p role="status">{t("zcode.noAgents")}</p> : <>
+      {readOnly ? <p role="status">{t("zcode.remote")}</p> : <>
         <label>{t("zcode.agent")}<select value={selectedAgent} onChange={event => setAgentId(event.target.value)}>
-          {registeredIds.map(id => <option value={id} key={id}>{id}</option>)}
+          {eligibleAgentIds.map(id => <option value={id} key={id}>{id}</option>)}
         </select></label>
         <ZCodeAgentControl key={`${goal.goalId}:${selectedAgent}`} goalId={goal.goalId} agentId={selectedAgent} />
       </>}

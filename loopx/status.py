@@ -1358,6 +1358,7 @@ def collect_status(
     include_public_boundary_scan: bool = True,
     recent_run_limit: int | None = None,
     include_goal_subagent_configuration: bool = False,
+    include_zcode_goal_eligibility: bool = False,
     activation_state_filter: str | None = None,
     agent_lane_id: str | None = None,
 ) -> dict[str, Any]:
@@ -1375,6 +1376,7 @@ def collect_status(
             include_goal_subagent_configuration=(
                 include_goal_subagent_configuration
             ),
+            include_zcode_goal_eligibility=include_zcode_goal_eligibility,
             activation_state_filter=activation_state_filter,
             agent_lane_id=agent_lane_id,
             context=build_status_collection_context(),
