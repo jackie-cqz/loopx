@@ -18,7 +18,6 @@ from loopx.configure_goal import configure_goal
 from loopx.control_plane.todos.handoff_mode import set_goal_handoff_mode
 from loopx.state_refresh import refresh_state_run
 from loopx.todos import add_goal_todo, complete_goal_todo
-from loopx.control_plane.work_items.task_lease import acquire_task_lease
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
@@ -132,13 +131,6 @@ def seed_delivery_tasks(story: dict[str, Any], registry: Path, runtime: Path) ->
             if by_key[key]["status"] != "deferred"
         ]
         if task["status"] == "done":
-            # Replay checkpoints obey the same hard-lease terminal contract.
-            # Completion releases this lease atomically with the Todo change.
-            lease_key = f"workspace-demo/{story['id']}/{task['key']}"
-            lease = checked(acquire_task_lease(
-                registry_path=registry, runtime_root=runtime, goal_id=story["id"],
-                todo_id=ids[task["key"]], owner=task["agent"], idempotency_key=lease_key,
-            ))["lease"]
             checked(
                 complete_goal_todo(
                     registry_path=registry,
@@ -146,8 +138,6 @@ def seed_delivery_tasks(story: dict[str, Any], registry: Path, runtime: Path) ->
                     goal_id=story["id"],
                     todo_id=ids[task["key"]],
                     agent_id=task["agent"],
-                    task_lease_idempotency_key=lease_key,
-                    task_lease_expected_version=lease["version"],
                     evidence="Scenario replay checkpoint; BRIEF.md, working-table.csv and calculations.json retain the planning inputs. No live execution receipt claimed.",
                     successor_todo_ids=[ids[key] for key in linked] or None,
                     no_followup=not linked,

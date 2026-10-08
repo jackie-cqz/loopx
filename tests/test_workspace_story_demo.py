@@ -80,9 +80,8 @@ def test_real_state_replay_is_local_and_repeatable(tmp_path, monkeypatch):
             registry_path=root / "registry.json", runtime_root=root / "runtime",
             goal_id=goal_id, todo_id=completed["todo_id"],
         )
-        assert lease["handoff_mode"] == "hard_lease"
-        assert lease["lease"]["status"] == "released"
-        assert lease["lease"]["owner"] == completed["claimed_by"]
+        assert lease["handoff_mode"] == "soft_claim"
+        assert lease["lease"] is None, "authored replay must not create execution leases"
         assert sum(t["status"] == "deferred" for t in agents) == 2
         assert sum(t["status"] == "blocked" for t in agents) == 4
         assert len([t for t in rows if t["role"] == "user" and not t["done"]]) == 2
