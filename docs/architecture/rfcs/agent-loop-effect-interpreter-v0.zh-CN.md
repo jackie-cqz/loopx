@@ -364,7 +364,7 @@ live 模型结果、App 采用或以下三项收敛验收完成。
 | 在真实宿主 renderer 采用同一 typed 投影 | heartbeat full/thin 与 Turn host 消费同一执行事实及同 Turn 捕获/详情入口；显式保留通知和 scheduler 的宿主传输。真实 File/SQLite CLI 与打包 Codex App 覆盖重入、来源丢失、必读前拒绝、迟到结果、backoff 和一次结算；补读不触发第二次准入。最后调用方迁移后才退役旧投影。 |
 | 核验上下文形态及迁移默认 | 将相同的正常、replan、等待/恢复与可选能力负载同时对照当前完整和短包路径，测量载荷/model token、详情 IO、延迟、资源增长、遗漏、决策与结果质量。数据丢失、重复效果、身份和结算错误保持硬约束；保留受支持的已保存 prompt/回执与可逆 rollout，根据证据再改预算或默认。 |
 
-下一成本切片已有可复现的回归预算缺口，不能归因于 fixture alias，也不授权删掉
+此前成本切片已复现回归预算缺口，不能归因于 fixture alias，也不授权删掉
 必需上下文。`aa87cc019` 与 `fc411c878` 使用相同公共 CLI fixture、临时 alias
 和命令参数，实际 JSON stdout 测量如下：
 
@@ -380,15 +380,30 @@ crowded Turn 的增长包括 envelope 内 484 个紧凑字符，以及新增 hoo
 有实际决策价值。hook 诊断另有副作用披露职责，移动或删除前须核验真实消费者。
 pretty-print 开销单独计量，不等于 token、延迟或模型质量结果。
 
-原 runner 测试仍失败：crowded `turn plan` 超过 16,000 字符上限，开启
+按原检查，crowded `turn plan` 超过 16,000 字符上限，开启
 multi-subagent 的 runner 超过 9,000 字符 envelope 上限。后者因嵌套 fixture
 路径在 base/candidate 分别输出 11,291／11,961 字符，与表中的路径负载不同。
-历史 base 已失败；这些是回归预算，不是执行 quota 或冻结的 promotion 门限。
-下一有界实现须先刻画诊断消费者，再比较无损压缩与有证据的余量，联合修改既有
-预算 owner 和 runner 测试。保留 fixture 规模、完整路由、来源全文、hook 坐标、
-新鲜性指令和真实 stdout 膨胀拒绝，遵循
-[预算决策指南](../../development/testing-and-quality.md#budget-failure-decisions)。
-原负载通过前，这次测量不算预算通过、transport 默认决策或安装态宿主资格。
+历史 base 已失败；原检查下的失败结果保持。
+
+当前源码资格另列。已合并的
+`a855a547e7a3fc4f9b5c3e02e1ea73cf0f591f95` 校准既有回归检查，同口径负载与
+有界余量见[预算决策指南](../../development/testing-and-quality.md#budget-failure-decisions)。
+在 `0cd547b0c442a5c0ec7f608827b02dce7aeb0aac` 独立重跑真实 CLI，candidate
+执行全部预算检查，96 行均通过；与不可变
+`2244b96f1e2e5c90bef43ae4c140c0994bfcc07a` 的既有语义差分两侧各 96 行，
+无 candidate-only 行或待复核变化。fixture 保留 1/36/18 个 Todo、1/12/12 个
+run、完整命令路由、开启 multi-subagent 及 blocking gate。crowded Turn 输出
+16,250 字符，上限 17,000；开启后的 envelope 为 11,426，上限 12,000；thin
+JSON 仍为 3,122。既有 runner 测试仍拒绝真实 stdout 膨胀，不改写路径或缩减负载。
+
+消费者审计保留两种 hook 视图：typed envelope 签名覆盖不可用上下文、hook 坐标
+和依赖动作的新鲜度；live Turn adapter 另读 hook 结果，通过 `effects` 与
+`boundary` 披露本机状态写入。把诊断当重复上下文删除会丢失副作用披露。紧凑
+序列化仅单列格式开销节省，不证明新的宿主传输资格。当前源码回归覆盖 File/SQLite
+偏好、空／失败 hook 的缓存失效、可选能力关闭隔离、所选要求与后续读取。本批
+关闭有界源码预算缺口；M7.4 仍未完成，packaged host 采用、模型 token／IO／延迟／
+结果证据及可逆 transport 默认决策继续保留。执行 quota、wire 限制和冻结的
+promotion 条件不变，不声称运行成本下降。
 
 不引入通用 executor，也不降低验收门槛来让短包通过。保留未满足要求，分别记录
 传输等价、安装态宿主采用和有效模型结果。见

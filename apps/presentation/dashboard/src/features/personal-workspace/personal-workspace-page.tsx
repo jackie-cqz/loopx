@@ -1405,7 +1405,12 @@ export function PersonalWorkspacePage({
         actionKind: "todo.update",
         context: { goal_id: todo.goalId, kind: "todo", todo_id: todo.todoId },
         idempotencyKey: `workspace-todo-${todo.todoId}-complete-${Date.now().toString(36)}`,
-        normalizedParameters: { goal_id: todo.goalId, operation: "complete", todo_id: todo.todoId },
+        normalizedParameters: {
+          ...(todo.claimedBy ? { agent_id: todo.claimedBy } : {}),
+          goal_id: todo.goalId,
+          operation: "complete",
+          todo_id: todo.todoId,
+        },
         summary: t("tasks.markComplete", { name: todo.text }),
       });
       setActionFeedback(null);

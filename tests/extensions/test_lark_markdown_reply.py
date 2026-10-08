@@ -20,6 +20,20 @@ from test_lark_inbox_reactions import ReplyRunner, _fixture
 TEXT = "进展\n\n- **结果**\n  - 证据\n\n```python\nif ok:\n    done()\n```"
 
 
+def test_result_attachment_zone_matches_raw_post_and_flattened_cli_readback():
+    keys = ("file_first", "file_second")
+    content = json.loads(lark_markdown_post_content(TEXT))
+    content["files"] = [{"key": key} for key in keys]
+    assert lark_markdown_preview_matches(text=TEXT, payload={"api": [{"body": {
+        "msg_type": "post", "content": content,
+    }}]}, attachment_keys=keys)
+    for actual in [{"body": {"content": content}}, {"content": TEXT + '\n\n<file key="file_first" name="first.pdf"/>\n<file key="file_second" name="second.csv"/>'}]:
+        assert lark_markdown_readback_matches(text=TEXT, message={"msg_type": "post", **actual}, attachment_keys=keys)
+    for tags in ['', '<file key="file_first"/>', '<file key="file_second"/>\n<file key="file_first"/>', '<image key="file_first"/>\n<file key="file_second"/>', '<file key="file_first"/>\n<file key="other"/>']:
+        assert not lark_markdown_readback_matches(text=TEXT, message={"msg_type": "post", "content": TEXT + '\n' + tags}, attachment_keys=keys)
+    assert not lark_markdown_readback_matches(text=TEXT, message={"msg_type": "post", "body": {"content": content}})
+
+
 def test_safe_plain_text_fallback_repairs_presentation_without_forging_mentions():
     text = (
         r"结论：通过\n下一步：@LoopX 管家查看"

@@ -1272,6 +1272,93 @@ def test_external_authority_is_rechecked_after_same_alias_replacement(
     assert result["warnings"] == ["external_authorization_changed"]
 
 
+@pytest.mark.parametrize("change", ["metadata_once", "metadata_always", "replacement", "revocation"])
+def test_external_context_recollects_only_with_unchanged_exact_authority(
+    monkeypatch, tmp_path, change
+):
+    """A snapshot race can recover; churn and changes during recovery cannot."""
+    registry = tmp_path / "registry.json"
+    payload = {"goals": [{"id": "authorized", "goal_instance_id": "ginst_" + "a" * 32}]}
+    registry.write_text(json.dumps(payload))
+    collect = context.build_goal_portfolio
+    calls = []
+    authorized = ["authorized"]
+
+    def racing_collection(**kwargs):
+        result = collect(**kwargs)
+        calls.append(result["inventory_revision"])
+        if len(calls) == 1 or change == "metadata_always":
+            payload["observation_generation"] = len(calls)
+        elif change == "replacement":
+            payload["goals"][0]["goal_instance_id"] = "ginst_" + "b" * 32
+        elif change == "revocation":
+            authorized.clear()
+        registry.write_text(json.dumps(payload))
+        return result
+
+    monkeypatch.setattr(context, "build_goal_portfolio", racing_collection)
+    result = context.collect_manager_turn_context(
+        registry, {"channel_id": "manager.external.fixture"}, tmp_path,
+        lambda _session: list(authorized), include_details=False,
+    )
+    if change == "metadata_once":
+        assert result["authorization_scope_id"] == context.manager_authorization_scope_id([
+            {"goal_id": "authorized", "goal_instance_id": "ginst_" + "a" * 32}
+        ])
+        assert result["goals"][0]["goal_instance_id"] == "ginst_" + "a" * 32
+    else:
+        assert result["goals"] == []
+        assert result["warnings"] == ["external_authorization_changed"]
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("continued_churn", [False, True])
+def test_external_inventory_recovery_never_repeats_inline_remote_reads(
+    monkeypatch, tmp_path, continued_churn
+):
+    from loopx.capabilities.manager_context.ssh_evidence import configure
+
+    registry = tmp_path / "registry.json"
+    payload = {"goals": [{"id": "authorized", "goal_instance_id": "ginst_" + "a" * 32}]}
+    registry.write_text(json.dumps(payload))
+    channel = "manager.external." + "e" * 24
+    config = tmp_path / "ssh_config"
+    config.write_text("Host research-host\n  HostName research-host.invalid\n")
+    configure(tmp_path, channel=channel, host="research-host", goal_ids=["remote-goal"],
+              execute=True, config_path=config)
+    collect = context.build_goal_portfolio
+    remote = context._remote_evidence
+    collections = []
+    dials = []
+
+    def racing_collection(**kwargs):
+        result = collect(**kwargs)
+        collections.append(result["inventory_revision"])
+        if len(collections) == 1 or continued_churn:
+            payload["observation_generation"] = len(collections)
+            registry.write_text(json.dumps(payload))
+        return result
+
+    def read_with_fixture_config(*args, **kwargs):
+        kwargs["config_path"] = config
+        return remote(*args, **kwargs)
+
+    def failed_ssh(argv, **kwargs):
+        dials.append(argv)
+        return SimpleNamespace(returncode=255, stdout="", stderr="Connection refused")
+
+    monkeypatch.setattr(context, "build_goal_portfolio", racing_collection)
+    monkeypatch.setattr(context, "_remote_evidence", read_with_fixture_config)
+    result = context.collect_manager_turn_context(
+        registry, {"channel_id": channel}, tmp_path, lambda _: ["authorized"],
+        include_details=False, remote_evidence=True, remote_runner=failed_ssh,
+    )
+    assert len(dials) == 1
+    assert len(collections) == 1
+    assert result["goals"] == []
+    assert result["warnings"] == ["external_authorization_changed"]
+
+
 def test_empty_external_authority_never_reaches_the_model(monkeypatch, tmp_path):
     store = ChatSessionStore(tmp_path / "runtime")
     runtime = ChatRuntimeController(

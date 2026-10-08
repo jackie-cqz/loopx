@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from xml.etree import ElementTree
 from collections.abc import Mapping
 from typing import Any
 
@@ -138,13 +139,17 @@ def lark_markdown_post_content(text: str) -> str:
     )
 
 
-def _single_markdown_post(value: Any) -> str | None:
+def _single_markdown_post(value: Any, attachment_keys: tuple[str, ...] = ()) -> str | None:
     if isinstance(value, str):
         try:
             value = json.loads(value)
         except json.JSONDecodeError:
             return None
-    if not isinstance(value, Mapping) or set(value) != {"zh_cn"}:
+    if not isinstance(value, Mapping) or set(value) != ({"zh_cn", "files"} if attachment_keys else {"zh_cn"}):
+        return None
+    if attachment_keys and (not isinstance(value.get("files"), list)
+                            or tuple(file.get("key") for file in value["files"] if isinstance(file, Mapping)) != attachment_keys
+                            or len(value["files"]) != len(attachment_keys)):
         return None
     locale = value["zh_cn"]
     if not isinstance(locale, Mapping) or set(locale) - {"title", "content"}:
@@ -165,7 +170,7 @@ def _single_markdown_post(value: Any) -> str | None:
     )
 
 
-def lark_markdown_preview_matches(*, text: str, payload: Mapping[str, Any]) -> bool:
+def lark_markdown_preview_matches(*, text: str, payload: Mapping[str, Any], attachment_keys: tuple[str, ...] = ()) -> bool:
     data = payload.get("data")
     calls = payload.get("api")
     if calls is None and isinstance(data, Mapping):
@@ -177,12 +182,12 @@ def lark_markdown_preview_matches(*, text: str, payload: Mapping[str, Any]) -> b
     return (
         isinstance(body, Mapping)
         and body.get("msg_type") == "post"
-        and _single_markdown_post(body.get("content"))
+        and _single_markdown_post(body.get("content"), attachment_keys)
         == normalize_lark_markdown_emphasis(text)
     )
 
 
-def lark_markdown_readback_matches(*, text: str, message: Mapping[str, Any]) -> bool:
+def lark_markdown_readback_matches(*, text: str, message: Mapping[str, Any], attachment_keys: tuple[str, ...] = ()) -> bool:
     """Accept the raw post or CLI's md text, never a plain-text lookalike."""
     if message.get("msg_type", message.get("message_type")) != "post":
         return False
@@ -190,11 +195,22 @@ def lark_markdown_readback_matches(*, text: str, message: Mapping[str, Any]) -> 
         return False
     body = message.get("body")
     if isinstance(body, Mapping):
-        actual = _single_markdown_post(body.get("content"))
+        actual = _single_markdown_post(body.get("content"), attachment_keys)
     else:
         actual = message.get("content")
         if not isinstance(actual, str):
-            actual = _single_markdown_post(actual)
+            actual = _single_markdown_post(actual, attachment_keys)
+        elif attachment_keys:
+            # The CLI renders the post's attachment zone as trailing file tags.
+            # The transport separately downloads and hashes these resources.
+            lines = actual.rstrip().splitlines()
+            try:
+                files = [ElementTree.fromstring(tag.strip()) for tag in lines[-len(attachment_keys):]]
+            except ElementTree.ParseError:
+                return False
+            if tuple(file.get("key") for file in files) != attachment_keys or any(file.tag != "file" for file in files):
+                return False
+            actual = "\n".join(lines[:-len(attachment_keys)]).rstrip()
     return isinstance(actual, str) and actual.replace(
         "\r\n", "\n"
     ).strip() == normalize_lark_markdown_emphasis(text)

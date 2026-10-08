@@ -608,6 +608,7 @@ export function createEffectRuntimeHandlers(
     ["collaboration.inbox.inspect_receipts", lazyHandler(() => import("./collaboration/inbox_receipts.ts"), ({inspectCollaborationInboxReceipts}) => inspectCollaborationInboxReceipts)],
     ["collaboration.inbox.receiver_followthrough", lazyHandler(() => import("./collaboration/inbox_receipts.ts"), ({projectReceiverFollowthrough}) => projectReceiverFollowthrough)],
     ["collaboration.result.plan_publication", lazyHandler(() => import("./collaboration/result_publication.ts"), ({planCollaborationResult}) => planCollaborationResult)],
+    ["collaboration.result.attachment_refs", lazyHandler(() => import("./collaboration/result_publication.ts"), ({resultAttachmentRefs}) => resultAttachmentRefs)],
     ["collaboration.result.delivery_ready", lazyHandler(() => import("./collaboration/result_publication.ts"), ({collaborationResultDeliveryReady}) => collaborationResultDeliveryReady)],
     ["collaboration.peer_host_route.select", lazyHandler(() => import("./collaboration/peer_route_selection.ts"), ({selectObservedPeerHostRoute}) => selectObservedPeerHostRoute)],
     ["runtime.execution_identity.codex", lazyHandler(() => import("./runtime/execution_identity.ts"), ({readCodexExecutionIdentity}) => readCodexExecutionIdentity)],

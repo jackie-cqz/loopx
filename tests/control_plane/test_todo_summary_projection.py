@@ -189,11 +189,11 @@ def test_selected_frontier_uses_the_summary_crossing_after_python_attachment_ret
         return original(method, request, **kwargs)
 
     monkeypatch.setattr(effect_runtime, "effect_runtime_result", track)
-    monkeypatch.setattr(frontier_revision, "effect_runtime_result", track)
     selected = filtered_todo_summary(source, role="agent", agent_id="agent-a", item_limit=1)
     assert selected["advancement_frontier_revision_index"]["claimed_advancement_counts"] == {"agent-a": 24}
     assert calls == ["todo.summary.project"]
     assert not hasattr(frontier_revision, "attach_advancement_frontier_revision_index")
+    assert not hasattr(frontier_revision, "build_advancement_frontier_revision_index")
 
 
 def test_missing_batched_frontier_never_falls_back_to_another_owner_call(monkeypatch):

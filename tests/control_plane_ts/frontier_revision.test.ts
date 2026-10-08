@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {createHash} from "node:crypto";
 import {deflateSync} from "node:zlib";
 import {projectAdvancementFrontier, evaluateLongTodoChain, claimedAdvancementCountFromIndex} from "../../loopx/control_plane/todos/frontier_revision.ts";
 
@@ -282,4 +283,18 @@ test("historical open-count long-chain checkpoints retain predecessor recovery",
   assert.deepEqual(result.bindings, [{kind: "predecessor", todo_id: "todo_9",
     frontier_revision: project(rows.slice(0, 9), "worker-a").frontier_revision,
     obligation_identity_revision: project(rows.slice(0, 9), "worker-a").frontier_owned_identity}]);
+});
+
+
+test("retained v0 wire preserves ASCII Unicode bytes and microsecond chronology", () => {
+  // Literal persisted material, independent of the summary producer/codec.
+  const open = String.raw`{"status":"open","task_class":"advancement_task","text":"\u8fb9\u754c \ud83e\udded","todo_id":"todo_a"}`;
+  const done = String.raw`{"status":"done","task_class":"advancement_task","todo_id":"todo_b"}`;
+  const rows = [{...row("todo_b"), updated: "2026-09-01T08:00:00.000001+08:00", serialized: done},
+    {...row("todo_a"), updated: "2026-09-01T00:00:00.000002Z", serialized: open}];
+  const expected = `todo_frontier_revision_v0:${createHash("sha256").update(`[${open},${done}]`).digest("hex").slice(0, 24)}`;
+  const checkpoint = project(rows);
+  assert.equal(checkpoint.complete, true);
+  assert.equal(checkpoint.frontier_revision, expected);
+  assert.equal(checkpoint.frontier_updated_at, "2026-09-01T00:00:00.000002Z");
 });

@@ -573,10 +573,11 @@ print(json.dumps(identity, sort_keys=True, separators=(",", ":")))
 }
 
 chat_runtime_identity() {
-  local python_command payload
+  local python_command payload request_timeout
   python_command="$(resolve_python_command)"
+  request_timeout="${1:-5}"
   # A scheme-less curl endpoint defaults to local HTTP; managed replacement rejects non-loopback hosts.
-  payload="$(curl -fsS --connect-timeout 1 --max-time 5 "$chat_runtime_endpoint/api/chat/capabilities" 2>/dev/null)"
+  payload="$(curl -fsS --connect-timeout 1 --max-time "$request_timeout" "$chat_runtime_endpoint/api/chat/capabilities" 2>/dev/null)"
   "$python_command" -c '
 import json
 import sys
@@ -592,7 +593,7 @@ print(json.dumps(identity, sort_keys=True, separators=(",", ":")))
 }
 
 verify_current_chat_runtime() {
-  local expected actual attempt
+  local expected actual attempt timeout_seconds deadline request_timeout
   if ! command -v curl >/dev/null 2>&1; then
     echo "curl is required to verify the restarted LoopX Chat runtime." >&2
     return 1
@@ -601,12 +602,22 @@ verify_current_chat_runtime() {
     echo "Could not resolve the installed LoopX runtime identity." >&2
     return 1
   }
+  timeout_seconds="${2:-15}"
+  [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || {
+    echo "LoopX Chat runtime verification timeout must be a positive integer." >&2
+    return 2
+  }
+  deadline=$((SECONDS + timeout_seconds))
   for attempt in {1..50}; do
-    actual="$(chat_runtime_identity 2>/dev/null || true)"
+    (( SECONDS < deadline )) || break
+    request_timeout=$((deadline - SECONDS))
+    (( request_timeout <= 5 )) || request_timeout=5
+    actual="$(chat_runtime_identity "$request_timeout" 2>/dev/null || true)"
     if [[ -n "$actual" && "$actual" == "$expected" ]]; then
       echo "- chat_runtime: current release identity verified"
       return 0
     fi
+    (( SECONDS < deadline )) || break
     sleep 0.2
   done
   echo "LoopX Chat did not start with the current release identity at local endpoint $chat_runtime_endpoint." >&2

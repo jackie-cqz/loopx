@@ -1856,12 +1856,22 @@ export const typedActionsScenario = {
         await page.getByRole("button", { name: "关闭", exact: true }).click();
       }
       api.nextActionPreviewDelayMs = 900;
-      const quickComplete = taskCards.first().getByRole("button", { name: /^标记完成：/u });
+      const conversationRuntime = page.getByRole("combobox", { name: "选择聊天 Runtime" });
+      const conversationAgentId = await conversationRuntime.getAttribute("data-value");
+      if (conversationAgentId !== "codex") throw new Error(`Quick Todo actor fixture requires the selected Codex Runtime, got ${conversationAgentId}`);
+      const claimedTask = taskCards.filter({ hasText: "Monitor ArcticDB #3179 LoopX comment" });
+      const unassignedTask = taskCards.filter({ hasText: "todo todo_1596c3a678bb" });
+      if (await claimedTask.count() !== 1 || await unassignedTask.count() !== 1) {
+        throw new Error("Quick Todo actor fixture requires the canonical claimed and unassigned Todo rows");
+      }
+      const quickComplete = claimedTask.getByRole("button", { name: /^标记完成：/u });
+      const unassignedQuickComplete = unassignedTask.getByRole("button", { name: /^标记完成：/u });
       const quickPreviewCount = api.actionPreviews.length;
       await quickComplete.click();
+      const quickCompleteHandle = await quickComplete.elementHandle();
       await page.waitForFunction(
-        () => document.querySelector('button[aria-label^="标记完成："]')?.getAttribute("aria-busy") === "true",
-        null,
+        (button) => button?.getAttribute("aria-busy") === "true",
+        quickCompleteHandle,
         { timeout: 600 },
       );
       if (!(await quickComplete.isDisabled())) throw new Error("Quick Todo completion remained clickable while preview creation was pending");
@@ -1869,14 +1879,35 @@ export const typedActionsScenario = {
       await page.getByText("确认执行").waitFor({ state: "visible", timeout: 2_000 });
       if (api.actionPreviews.length !== quickPreviewCount + 1) throw new Error("Quick Todo completion did not create exactly one typed preview");
       const quickPreview = api.actionPreviews.at(-1);
-      if (quickPreview?.action_kind !== "todo.update" || quickPreview.normalized_parameters.operation !== "complete") throw new Error(`Quick Todo completion created the wrong typed preview: ${JSON.stringify(quickPreview)}`);
+      if (quickPreview?.action_kind !== "todo.update"
+        || quickPreview.normalized_parameters.operation !== "complete"
+        || quickPreview.normalized_parameters.todo_id !== "todo_15bc0926a494") {
+        throw new Error(`Quick Todo completion created the wrong typed preview: ${JSON.stringify(quickPreview)}`);
+      }
+      if (quickPreview.normalized_parameters.agent_id !== "codex-value-explorer"
+        || quickPreview.normalized_parameters.agent_id === conversationAgentId) {
+        throw new Error(`Quick Todo completion used the wrong actor; Todo owner=codex-value-explorer, conversation owner=${conversationAgentId}, preview=${JSON.stringify(quickPreview.normalized_parameters)}`);
+      }
       await page.getByRole("button", { name: "关闭", exact: true }).click();
+      const unassignedPreviewCount = api.actionPreviews.length;
+      await unassignedQuickComplete.click();
+      await page.getByText("确认执行").waitFor({ state: "visible" });
+      const unassignedPreview = api.actionPreviews.at(-1);
+      if (api.actionPreviews.length !== unassignedPreviewCount + 1
+        || unassignedPreview?.action_kind !== "todo.update"
+        || unassignedPreview.normalized_parameters.operation !== "complete"
+        || unassignedPreview.normalized_parameters.todo_id !== "todo_1596c3a678bb"
+        || Object.hasOwn(unassignedPreview.normalized_parameters, "agent_id")) {
+        throw new Error(`Unassigned quick Todo completion must omit agent_id: ${JSON.stringify(unassignedPreview?.normalized_parameters)}`);
+      }
+      await page.getByRole("button", { name: "关闭", exact: true }).click();
+      const rejectedPreviewCount = api.actionPreviews.length;
       api.failNextActionPreview = true;
       api.nextActionPreviewDelayMs = 300;
       await quickComplete.click();
       await page.getByText(/^无法准备确认预览：/u).waitFor({ state: "visible", timeout: 1_000 });
       if (await quickComplete.isDisabled()) throw new Error("Quick Todo completion stayed disabled after a preview failure");
-      if (api.actionPreviews.length !== quickPreviewCount + 1) throw new Error("A rejected quick completion preview was recorded as ready");
+      if (api.actionPreviews.length !== rejectedPreviewCount) throw new Error("A rejected quick completion preview was recorded as ready");
       await page.getByRole("navigation", { name: "Goal 视图" }).getByRole("button", { name: /^(Chat|对话)$/ }).click();
       await page.getByRole("dialog").filter({ hasText: "确认执行" }).waitFor({ state: "hidden" });
 

@@ -50,6 +50,30 @@ def test_malformed_terminal_proof_cannot_stop_quota(patch: dict[str, object]) ->
     assert "terminal_state" not in decision["goal_frontier_projection"]
 
 
+def test_terminal_monitor_counts_must_match_the_source_before_quota_stops() -> None:
+    parsed = parse_active_state_todos(SOURCE)
+    source = deepcopy(parsed["agent_todos"])
+    # The monitor counters agree with one another but contradict the complete
+    # source, which contains no open Monitor rows.
+    source["terminal_closure_proof"].update(
+        {"monitor_open_count": 1, "watch_only_monitor_count": 1}
+    )
+
+    summary = summarize_user_todos_for_quota(source)
+    assert summary["source_completeness"]["status"] == "invalid"
+    assert "closure_intent" not in summary
+    status = quota_status_payload(
+        goal_id="goal-proof-test",
+        status="active",
+        recommended_action="Inspect exact closure evidence.",
+        user_todos=parsed["user_todos"],
+        agent_todos=source,
+    )
+    decision = build_quota_should_run(status, goal_id="goal-proof-test")
+    assert decision["effective_action"] != "terminal_no_followup"
+    assert "terminal_state" not in decision["goal_frontier_projection"]
+
+
 def test_valid_complete_source_still_closes_without_changing_its_proof() -> None:
     parsed = parse_active_state_todos(SOURCE)
     before = deepcopy(parsed)

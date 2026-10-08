@@ -140,6 +140,21 @@ test("closure source validation retains empty, bounded full-source and watch-onl
   for (const source of cases) assert.equal((validateTodoClosureSource(source).source_completeness as Record<string, unknown>).status, "valid");
   assert.equal(validateTodoClosureSource(cases[0]).closure_intent, null);
 });
+test("closure proofs cannot claim all todos are done while watch-only monitors remain", () => {
+  const input = closureSource();
+  const watchOnly = {...input, total_count: 2, open_count: 1, done_count: 1,
+    items: [...input.items as Record<string, unknown>[], {status: "open", done: false, watch_only: true}],
+    monitor_open_items: [{watch_only: true}],
+    source_proof: {...input.source_proof as Record<string, unknown>, item_count: 2},
+    terminal_closure_proof: {...input.terminal_closure_proof as Record<string, unknown>, item_count: 2,
+      all_todos_done: false, all_convergent_todos_done: true, monitor_open_count: 1, watch_only_monitor_count: 1}};
+  assert.equal((validateTodoClosureSource(watchOnly).source_completeness as Record<string, unknown>).status, "valid");
+  const inconsistent = {...watchOnly, terminal_closure_proof: {...watchOnly.terminal_closure_proof,
+    all_todos_done: true}};
+  const result = validateTodoClosureSource(inconsistent);
+  assert.equal((result.source_completeness as Record<string, unknown>).status, "invalid");
+  assert.equal(result.closure_intent, null);
+});
 test("open, partial, deferred and replan source evidence cannot reuse a terminal proof", () => {
   const input = closureSource();
   for (const patch of [{source_proof: null}, {total_count: true}, {done_count: "1"}, {open_count: 1},

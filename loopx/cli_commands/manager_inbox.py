@@ -65,6 +65,8 @@ def register_manager_inbox(subparsers, add_format):
         "--phase", choices=("decision", "conclusion"), default="conclusion"
     )
     parser.add_argument("--reply-text")
+    parser.add_argument("--attachment-ref", action="append", default=[],
+                        help="For report: explicit relative file in the registered Goal workspace; bound-owner App only, at most four files.")
     parser.add_argument("--update-id", help="For report: stable identity for a later conclusion; retry the same id and text.")
     parser.add_argument("--result-key", help="For acknowledge-return: the exact peer result read; defaults to the initial conclusion.")
     parser.add_argument("--related-todo-id", action="append", default=[])
@@ -91,6 +93,8 @@ def handle_manager_inbox(args, registry_path, runtime_root):
             return 0
         if getattr(args, "update_id", None) is not None and args.manager_inbox_action != "report":
             raise ValueError("--update-id is only supported for report")
+        if getattr(args, "attachment_ref", None) and args.manager_inbox_action != "report":
+            raise ValueError("--attachment-ref is only supported for report")
         if getattr(args, "result_key", None) is not None and args.manager_inbox_action != "acknowledge-return":
             raise ValueError("--result-key is only supported for acknowledge-return")
         cursor = getattr(args, "cursor", None)
@@ -205,6 +209,8 @@ def handle_manager_inbox(args, registry_path, runtime_root):
                 args.phase,
                 args.reply_text or "",
                 update_id=getattr(args, "update_id", None),
+                attachment_refs=getattr(args, "attachment_ref", None),
+                workspace=Path.cwd(),
                 registry=registry_path,
             )
         elif args.manager_inbox_action == "link":

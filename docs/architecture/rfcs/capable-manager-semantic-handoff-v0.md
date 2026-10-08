@@ -314,6 +314,20 @@ File/SQLite CLI and real stdio tests qualify this context/tool slice. Receiver
 adoption, actual effects and original-route return remain separate acceptance;
 keep G0/G1 open until the installed ordinary journey proves them.
 
+**Explicit result-file checkpoint (2026-10-08).** The existing CLI `report` and
+scoped MCP `return_result` now accept bounded workspace-relative attachment refs
+for verified bound-owner App requests. The shared typed publication owner binds
+their immutable content identity; the POSIX host snapshots bytes, and Lark returns
+one Markdown post with files to the original conversation. Regressions cover
+workspace edits after publication, revoked return authority, exact Goal-instance
+replacement, lost resource records and download mismatch without a resend. This
+is an A9/A14 return-path candidate, not installed live-provider acceptance or
+M3 completion. Keep those gates open. The existing manager delivery owner next
+qualifies the installed private-App journey; local-Web file presentation, inline
+video playback, groups and cross-host transfer remain with their existing surface
+owners. Explicit refs make this boundary independently verifiable and reversible,
+without inferring attachments from model prose or adding another delivery ledger.
+
 Migrate current inbox/tracking/roundtrip records into the single collaboration owner; preserve their valid effect semantics and receipts, but retire duplicate manager-specific transition logic after cutover. Persist intent before dispatch; use request revision plus effect identity for idempotency. A changed payload cannot reuse an immutable identity; a correction appends a linked revision and the receiver rechecks relevant state before effectful execution. Multiple messages about one job may be explicitly related by the manager, preserving each original obligation and correction. Do not merge independent same-text requests by a content hash alone.
 
 At-least-once delivery with idempotent Core effects is the target. Do not promise exactly-once external effects: uncertain sends are reconciled using provider receipts before retry. Concurrent workers use existing claims/leases; delegation does not claim the worker's Todo. Cross-host operation uses configured transport and authority, not a bare local path copied to another machine.

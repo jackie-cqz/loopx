@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from contextlib import nullcontext
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from heapq import merge
 from itertools import chain, islice
@@ -78,6 +78,16 @@ REGISTRY_STATUS_FIELDS = (
     "next_handoff_condition",
     *LEGACY_TODO_EVENT_SOURCE_FIELDS,
 )
+
+
+def goal_registry_digest(goal: Mapping[str, Any]) -> str:
+    encoded = json.dumps(
+        goal,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -365,11 +375,16 @@ def collect_history(
         runtime_root,
         registry=build_builtin_machine_configuration_registry(),
     )
+    registry_goal_rows = registry_goals(registry)
+    registry_goal_digests = {
+        str(goal.get("id")): goal_registry_digest(goal)
+        for goal in registry_goal_rows
+    }
     goal_meta = {
         str(goal.get("id")): project_goal_with_builtin_machine_configuration(
             goal, machine_configuration
         )
-        for goal in registry_goals(registry)
+        for goal in registry_goal_rows
     }
     activation_filter = (
         normalize_goal_activation_state(activation_state_filter)
@@ -440,6 +455,7 @@ def collect_history(
         goal_record = {
             "id": current_goal_id,
             "activation_state": activation_state.value,
+            "registry_goal_digest": registry_goal_digests.get(current_goal_id),
             "display_name": meta.get("display_name") if registry_member else None,
             "domain": meta.get("domain"),
             "status": meta.get("status") if registry_member else "legacy-runtime",

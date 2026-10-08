@@ -793,34 +793,36 @@ def collect_manager_turn_context(
             )
         )
 
-    context = manager_turn_context(
-        registry_path,
-        session,
-        runtime_root,
-        authorized_goal_ids=before,
-        include_details=include_details,
-        remote_evidence=remote_evidence,
-        remote_runner=remote_runner,
-        # The Turn owner already re-resolves the external scope after the local
-        # collection; the source read checks the same exact scope around it.
-        remote_scope_valid=scope_unchanged,
-    )
-    after = resolve()
-    after_scope_id = (
-        manager_authorization_scope_id_for_registry(
+    for attempt in range(2):
+        context = manager_turn_context(
             registry_path,
-            after,
-            runtime_root=runtime_root,
-            channel_id=session.get("channel_id"),
+            session,
+            runtime_root,
+            authorized_goal_ids=before,
+            include_details=include_details,
+            remote_evidence=remote_evidence,
+            remote_runner=remote_runner,
+            # Source reads and the Turn owner check the same exact authority.
+            remote_scope_valid=scope_unchanged,
         )
-        if registry_path is not None and after is not None
-        else None
-    )
-    if before != after or (
-        registry_path is not None
-        and before is not None
-        and after is not None
-        and before_scope_id != after_scope_id
-    ):
-        return unavailable_manager_context("external_authorization_changed")
+        after = resolve()
+        after_scope_id = (
+            manager_authorization_scope_id_for_registry(
+                registry_path,
+                after,
+                runtime_root=runtime_root,
+                channel_id=session.get("channel_id"),
+            )
+            if registry_path is not None and after is not None
+            else None
+        )
+        if before != after or before_scope_id != after_scope_id:
+            return unavailable_manager_context("external_authorization_changed")
+        # Recollect local, on-demand context once under the original scope.
+        # Inline remote collection owns one dial/Turn budget, including failed
+        # reads; recollecting it would restart that budget.
+        if (attempt == 0 and not remote_evidence and before_scope_id is not None
+                and context.get("warnings") == ["external_authorization_changed"]):
+            continue
+        break
     return context

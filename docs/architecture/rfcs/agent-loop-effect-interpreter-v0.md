@@ -517,7 +517,7 @@ Remaining implementation Todos, in dependency order:
 | Adopt one typed projection in real host renderers | Heartbeat full/thin and Turn host consume the same execution facts and per-Turn capture/detail route. Keep host-specific notification and scheduler transport explicit. Real File/SQLite CLI plus packaged Codex App tests cover reentry, source loss, refusal before required reads, late results, backoff and exactly-once settlement; no second admission from a detail read. Retire the replaced projection only after its last caller moves. |
 | Qualify the context shape and migration default | Compare the same normal, replan, wait/recovery and optional-capability workloads against both current full and compact paths. Measure payload/model tokens, detail IO, latency, resource growth, omissions and decision/outcome quality. Keep data loss, duplicate effects, identity and settlement errors as hard constraints. Preserve supported saved prompts/receipts and reversible rollout; change budgets or defaults only with that evidence. |
 
-The next cost slice has a reproduced regression-budget gap, rather than a
+The earlier cost slice reproduced a regression-budget gap, rather than a
 missing fixture alias or permission to remove required context. Comparing
 `aa87cc019` with `fc411c878` on the unchanged public CLI fixture, identical
 temporary aliases and command arguments produced these JSON stdout costs:
@@ -537,20 +537,40 @@ The hook diagnostic has a separate effect-disclosure role; audit its actual
 consumers before moving or removing it. Pretty-print overhead is measured
 separately and is not a token, latency or model-quality result.
 
-The original runner tests still fail: crowded `turn plan` exceeds its 16,000
-character ceiling, and the enabled multi-subagent runner exceeds its 9,000
+Under the original guards, crowded `turn plan` exceeded its 16,000
+character ceiling, and the enabled multi-subagent runner exceeded its 9,000
 character envelope ceiling. Its nested fixture paths emit 11,291 characters
 on the base and 11,961 on the candidate; that is a different path workload
-from the table. The historical base was already red. These are regression
-budgets, not execution quota or frozen promotion limits. The next bounded
-implementation must characterize diagnostic consumers, compare lossless
-compaction with justified headroom, and update the existing budget owner and
-its runner tests together. Preserve the fixture populations, full routes,
-required-source content, hook coordinates, freshness clauses and real stdout
-growth rejection. Follow the
+from the table. The historical base was already red; those results remain
+failures under their original guards.
+
+The current source checkpoint is qualified separately. The merged calibration
+at `a855a547e7a3fc4f9b5c3e02e1ea73cf0f591f95` updates the existing regression
+guards, with its matched workload and bounded headroom recorded in the
 [budget decision guide](../../development/testing-and-quality.md#budget-failure-decisions).
-Until that slice passes the original workload, this measurement is not a
-budget pass, a transport-default decision or installed host qualification.
+An independent real CLI rerun at `0cd547b0c442a5c0ec7f608827b02dce7aeb0aac`
+passes all 96 producer rows with candidate budget enforcement. Its immutable
+`2244b96f1e2e5c90bef43ae4c140c0994bfcc07a` comparison passes the existing
+semantic differential with 96 rows on each side, no candidate-only rows and
+no review-required changes. The fixture still contains 1/36/18 Todos,
+1/12/12 runs, full command routes, enabled multi-subagent and blocking gates.
+Crowded Turn emits 16,250 characters against 17,000; the enabled envelope
+emits 11,426 against 12,000. Thin JSON remains 3,122 characters. Existing
+runner tests also reject real stdout inflation without rewriting paths or
+shrinking the fixture.
+
+The consumer audit retains both hook views: the typed envelope signs unavailable
+context, hook coordinates and dependent-action freshness; the live Turn adapter
+also reads hook results to disclose local state writes through `effects` and
+`boundary`. Removing that diagnostic as duplicate context would lose effect
+disclosure. Compact serialization measures formatting savings separately;
+it does not qualify a new host transport. Current source regressions cover
+File/SQLite preferences, empty/failed hook invalidation, optional-off isolation,
+selected requirements and later reads. This closes the bounded source-budget
+gap, not M7.4: packaged host adoption, model token/IO/latency/outcome evidence
+and a reversible transport-default decision remain open. Execution quota,
+wire limits and frozen promotion criteria are unchanged; no runtime cost
+reduction is claimed.
 
 Do not add a generic executor or lower an acceptance threshold to make a short
 packet pass. Preserve unsatisfied requirements and distinguish transport parity,
