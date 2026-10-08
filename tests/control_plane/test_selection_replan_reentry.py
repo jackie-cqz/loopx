@@ -21,6 +21,10 @@ def test_replan_selection_recovers_inline_or_refuses_ineligible_choice_and_settl
     _configure_selectable_alternative(project)
     if initial_replan:
         _configure_selected_todo_replan_fixture(project, registry)
+        # Unsettled records qualify only the explicit completed-Todo fallback.
+        rc, configured = _run_cli(registry, runtime, "configure-goal", "--goal-id", GOAL_ID,
+                                  "--execution-replan-after-todos", "5", "--execute")
+        assert rc == 0, configured
         _append_surface_only_runs(runtime, count=AUTONOMOUS_REPLAN_PERIODIC_RUN_THRESHOLD)
     turn = "turn-selection-preempted"
     guard = ("quota", "should-run", "--codex-app", "--goal-id", GOAL_ID,

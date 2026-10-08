@@ -92,9 +92,14 @@ def _exhausted_action(
 def _explore_context_action(
     request: Mapping[str, object],
 ) -> ScriptedExecToolAction:
-    read = _latest_quota_packet(request)["required_reads"][0]
-    assert read["kind"] == "explore_turn_context"
+    channel = _latest_quota_packet(request)["interaction_contract"]["agent_channel"]
+    context = channel["work_context"]
+    assert context["complete"] is True
+    read, = [source for source in context["sources"]
+             if source["kind"] == "explore_turn_context"]
     assert read["ordering"] == "before_work"
+    assert read["content"]["goal_id"] == "replan-semantic-action-fixture"
+    assert read["content"]["agent_id"] == "codex-replan-semantic-action"
     return ScriptedExecToolAction(command=read["command"])
 
 
@@ -435,7 +440,6 @@ def test_real_tool_loop_selects_composition_gap_and_creates_bound_successor(
     transport = ScriptedDoubaoExecTransport(
         [
             ScriptedExecToolAction(command=fixture.quota_guard_command),
-            _explore_context_action,
             ScriptedExecToolAction(command="cat replan-frontier.json"),
             ScriptedExecToolAction(command="cat fixture/permission-config.json"),
             _composition_successor_action,
@@ -453,7 +457,6 @@ def test_real_tool_loop_selects_composition_gap_and_creates_bound_successor(
     assert receipt["qualification_passed"] is True, receipt
     assert receipt["observed_tool_sequence"] == [
         "quota_should_run",
-        "explore_turn_context",
         "workspace_read",
         "workspace_read",
         "replan_successor_create",
@@ -470,6 +473,14 @@ def test_real_tool_loop_selects_composition_gap_and_creates_bound_successor(
     assert successor_reentry["composition_status"] == "scheduled"
 
     quota_packet = json.loads(transport.requests[1]["messages"][-1]["content"])
+    # The canonical context owner has already delivered the scoped hook body.
+    # Displayed source commands are provenance, not another required tool call.
+    _explore_context_action(transport.requests[1])
+    assert quota_packet.get("required_reads") in (None, [])
+    assert not any(
+        read.get("kind") == "explore_turn_context"
+        for read in quota_packet["interaction_contract"]["agent_channel"]["required_reads"]
+    )
     selected_gap = quota_packet["bounded_research_frontier"]["selected_gap"]
     assert selected_gap["experiment_node_ref"] == (
         "experiment-permission-composition"
@@ -479,15 +490,13 @@ def test_real_tool_loop_selects_composition_gap_and_creates_bound_successor(
     ] == selected_gap["experiment_node_ref"]
 
 
-@pytest.mark.parametrize("attempt", ["omit", "repeat", "wrong_scope"])
-def test_composition_read_obligation_cannot_be_skipped_replayed_or_retargeted(
+@pytest.mark.parametrize("attempt", ["repeat", "wrong_scope"])
+def test_delivered_composition_context_cannot_be_replayed_or_retargeted(
     tmp_path: Path, attempt: str,
 ) -> None:
     fixture = _build_fixture(tmp_path / "oracle", composition_frontier=True)
     actions = [ScriptedExecToolAction(command=fixture.quota_guard_command)]
-    if attempt == "omit":
-        actions.append(ScriptedExecToolAction(command="cat replan-frontier.json"))
-    elif attempt == "repeat":
+    if attempt == "repeat":
         actions.extend([_explore_context_action, _explore_context_action])
     else:
         def wrong_scope(request: Mapping[str, object]) -> ScriptedExecToolAction:
@@ -505,10 +514,7 @@ def test_composition_read_obligation_cannot_be_skipped_replayed_or_retargeted(
         fixture_root=tmp_path / "actor", composition_frontier=True,
     )
     assert receipt["qualification_passed"] is False
-    assert receipt["failure_code"] == (
-        "repeated_explore_turn_context"
-        if attempt == "repeat" else "required_explore_turn_context_missing"
-    )
+    assert receipt["failure_code"] == "unexpected_command"
     assert receipt["semantic_action_accepted"] is False
     assert "replan_successor_create" not in receipt["observed_tool_sequence"]
 

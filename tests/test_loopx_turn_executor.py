@@ -1061,7 +1061,7 @@ def test_enabled_host_result_rejects_receipt_local_path() -> None:
         (
             "evidence_refs",
             ["file:/tmp/private-result.json"],
-            "opaque 1-192 character public-safe reference",
+            "contains a local path",
         ),
     ],
 )
@@ -1184,9 +1184,11 @@ def test_managed_start_waits_before_host_and_replay_needs_no_new_admission(
     assert denied["admission"]["next_eligible_at_ms"] == 9000
     assert denied["effects"]["host_invoked"] is False
     assert calls == {"host": 0, "admit": 1, "writeback": 0, "spend": 0, "scheduler": 0}
-    assert not list(
-        (tmp_path / "runtime" / "goals" / "fixture-goal" / "turns").glob("*.json")
-    )
+    # Lock-holder metadata is not a committed Turn journal on Windows.
+    assert not turn_journal_path(
+        tmp_path / "runtime", goal_id="fixture-goal",
+        turn_key=str(plan["transaction"]["turn_key"]),
+    ).exists()
 
     def allow(_identity: object) -> dict[str, object]:
         calls["admit"] += 1
@@ -1318,7 +1320,9 @@ def test_reserved_managed_start_recovers_after_death_before_the_first_journal_wr
     assert [
         (row["state"], row["request_id"]) for row in _cadence_starts(runtime_root)
     ] == [("reserved", f"{turn_key}:1")]
-    assert not list((runtime_root / "goals" / "fixture-goal" / "turns").glob("*.json"))
+    assert not turn_journal_path(
+        runtime_root, goal_id="fixture-goal", turn_key=turn_key,
+    ).exists()
     assert calls == {"host": 0, "writeback": 0, "spend": 0, "scheduler": 0}
 
     started_at_ms = int(_cadence_starts(runtime_root)[0]["started_at_ms"])

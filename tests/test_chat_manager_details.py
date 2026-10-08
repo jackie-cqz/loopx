@@ -58,7 +58,9 @@ def test_priority_context_keeps_conditions_and_scoped_decision(monkeypatch, tmp_
            'required_decision_scopes': [{'kind': 'direction', 'granularity': 'action',
                                          'scope_key': 'publish_report'}],
            'note': 'Context. ' * 60 + 'Keep this a draft; do not publish.'}
-    monkeypatch.setattr(details, 'list_goal_todos', lambda **_: {'ok': True, 'todos': [row]})
+    monkeypatch.setattr(details, 'list_goal_todos', lambda **query: (
+        {'ok': True, 'todo': row} if query.get('todo_id') else {'ok': True, 'todos': [row]}
+    ))
     result = details.read_manager_goal_details(tmp_path/'r', tmp_path, 'alpha', owner_scope=True)
     overview = result['todos'][0]
     assert overview['resume_when'] == row['resume_when']
