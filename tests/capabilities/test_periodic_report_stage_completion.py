@@ -246,6 +246,56 @@ def test_durable_run_history_derives_terminal_boundary_without_successor() -> No
     assert receipt["transition"] == "goal_terminal"
 
 
+@pytest.mark.parametrize(
+    ("newer_agent", "newer_at", "expected"),
+    [
+        ("case-analyst", "2026-08-29T11:00:00Z", False),
+        ("case-analyst", "2026-08-29T10:00:00Z", False),
+        ("peer-analyst", "2026-08-29T11:00:00Z", True),
+    ],
+)
+def test_terminal_stage_requires_the_current_agents_closed_vision(
+    newer_agent: str, newer_at: str, expected: bool,
+) -> None:
+    newer = _vision(state="active", generated_at=newer_at)
+    newer["agent_id"] = newer_agent
+    receipt = derive_periodic_report_stage_completion_from_runs(
+        latest_runs=[
+            {"agent_vision": newer},
+            {"agent_vision": _vision(
+                state="vision_closed", generated_at="2026-08-29T10:00:00Z"
+            ), "vision_checkpoint": _checkpoint()},
+        ],
+        agent_id="case-analyst",
+        goal_frontier_projection={"terminal_state": {
+            "schema_version": "goal_terminal_state_v0", "kind": "no_followup",
+            "derived": True, "source": "validated_goal_closure",
+        }},
+    )
+    assert (receipt is not None) is expected
+
+
+@pytest.mark.parametrize("newer_at", ["2026-08-29T10:00:00Z", "2026-08-29T12:00:00Z"])
+@pytest.mark.parametrize("satisfied", [False, True])
+def test_terminal_stage_cannot_skip_a_newer_nonmaterial_closed_vision(
+    newer_at: str, satisfied: bool,
+) -> None:
+    receipt = derive_periodic_report_stage_completion_from_runs(
+        latest_runs=[
+            {"agent_vision": _vision(state="vision_closed", generated_at=newer_at),
+             "vision_checkpoint": {"satisfied": satisfied, "decision": "patched", "triggers": []}},
+            {"agent_vision": _vision(state="vision_closed", generated_at="2026-08-29T10:00:00Z"),
+             "vision_checkpoint": _checkpoint()},
+        ],
+        agent_id="case-analyst",
+        goal_frontier_projection={"terminal_state": {
+            "schema_version": "goal_terminal_state_v0", "kind": "no_followup",
+            "derived": True, "source": "validated_goal_closure",
+        }},
+    )
+    assert receipt is None
+
+
 def test_stage_receipt_flattens_to_public_rollout_details() -> None:
     receipt = derive_periodic_report_stage_completion(
         closed_vision=_vision(

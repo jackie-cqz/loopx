@@ -112,19 +112,64 @@ def dispatch(root: Path, registry: Path, *, session: dict[str, Any], turn: dict[
         return {"submitted": False, "reason": "execution_binding_or_admission_unavailable"}
 
 
-def handoff_message(receipt: dict[str, Any], execution: dict[str, Any]) -> str:
-    prefix = "已将原消息交给 " + str(receipt["agent_id"]) + "。"
+def handoff_message(
+    receipt: dict[str, Any],
+    execution: dict[str, Any],
+    *,
+    brief: dict[str, Any] | None = None,
+) -> str:
+    """Summarize delivered context; execution facts come only from dispatch.
+
+    Display limits do not change the full normalized brief in the inbox.
+    The sender's free-form message cannot establish delivery or completion.
+    """
+    blocks = [f"已将原消息交给 {receipt['goal_id']} / {receipt['agent_id']}。"]
+    shortened = False
+
+    def preview(value: str, limit: int) -> str:
+        nonlocal shortened
+        if len(value) <= limit:
+            return value
+        shortened = True
+        return value[:limit] + "…"
+
+    if brief:
+        blocks.extend(
+            [
+                "任务：" + preview(brief["purpose"], 180),
+                "交接依据：" + preview(brief["context"], 400),
+            ]
+        )
+        for key, label in (("constraints", "约束"), ("acceptance", "验收")):
+            items = brief[key]
+            if items:
+                shortened |= len(items) > 3
+                blocks.append(
+                    label + "：" + "；".join(preview(item, 120) for item in items[:3])
+                )
+        blocks.append("回传：" + preview(brief["return_requirement"], 180))
+        if shortened:
+            blocks.append("以上为摘要，完整简报已投递。")
     if execution.get("submitted"):
-        return prefix + "已提交受控执行；受理不代表完成，接收方的处理结论将回到本次对话。"
-    if execution.get("reason"):
-        return prefix + "交接已保存，但执行绑定或任务准入未通过，尚未启动执行。"
-    return prefix + "材料已进入收件箱，尚未启动执行；收到接收方的处理结论后会回到这里。"
+        state = "已提交受控执行；受理不代表完成。"
+    elif execution.get("reason"):
+        state = "交接已保存，但本次未提交受控执行；接收方是否已开始处理尚未核实。"
+    else:
+        state = "已确认投递到收件箱；接收方是否已开始处理尚未核实。"
+    blocks.append(state + "接收方的处理结论将回到本次对话。")
+    return "\n\n".join(blocks)
 
 
-def handoff_response(root: Path, registry: Path, *, session: dict[str, Any],
-                     turn: dict[str, Any], response: dict[str, Any],
-                     source_authorized: Callable[[], bool],
-                     execution_allowed: Callable[[], bool]) -> dict[str, Any]:
+def handoff_response(
+    root: Path,
+    registry: Path,
+    *,
+    session: dict[str, Any],
+    turn: dict[str, Any],
+    response: dict[str, Any],
+    source_authorized: Callable[[], bool],
+    execution_allowed: Callable[[], bool],
+) -> dict[str, Any]:
     """Present context delivery and separately admitted execution on one path."""
     from . import deliver
 
@@ -138,7 +183,8 @@ def handoff_response(root: Path, registry: Path, *, session: dict[str, Any],
                              execution_allowed=execution_allowed)
         return {**response, "proposals": [], "gate": None,
                 "context_handoff_receipt": receipt, "context_execution": execution,
-                "message": handoff_message(receipt, execution)}
+                "message": handoff_message(receipt, execution,
+                                           brief=response["context_handoff"].get("brief"))}
     except (OSError, ValueError):
         return {**response, "proposals": [], "gate": None,
                 "message": "材料尚未转交：目标绑定、来源授权或持久收件回读未通过。需要修复交接链路；没有改动任务或优先级。"}

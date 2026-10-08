@@ -162,7 +162,7 @@ def test_stopped_goal_is_not_a_context_recipient_and_revokes_replay(fixture):
         {"goal_id": "other", "agent_id": "peer"}
     ]
     before = {path: path.read_bytes() for path in _root(root).rglob("*.json")}
-    with pytest.raises(ValueError, match="collaboration Goal is stopped or archived"):
+    with pytest.raises(ValueError, match="stopped or archived"):
         deliver(root, registry, session=session, turn=turn, request=request)
     assert before == {path: path.read_bytes() for path in _root(root).rglob("*.json")}
     assert len(pending(root, "research", "worker")["items"]) == 1
@@ -186,7 +186,7 @@ def test_stopped_or_invalid_goal_is_excluded_from_lark_and_goal_chat(fixture, lo
     goal_session = {**session, "channel_id": "goal.research", "goal_id": "research"}
     assert authority(root, registry, goal_session, turn)["targets"] == []
     before = {path: path.read_bytes() for path in _root(root).rglob("*.json")}
-    with pytest.raises(ValueError, match="collaboration Goal is stopped or archived"):
+    with pytest.raises(ValueError, match="stopped or archived"):
         deliver(root, registry, session=goal_session, turn=turn, request=request)
     assert before == {path: path.read_bytes() for path in _root(root).rglob("*.json")}
 
@@ -205,7 +205,7 @@ def test_stopped_or_invalid_goal_is_excluded_from_lark_and_goal_chat(fixture, lo
     expected = [] if local_scope == "selected" else [{"goal_id": "other", "agent_id": "peer"}]
     assert authority(root, registry, lark_session, lark_turn)["targets"] == expected
     before = {path: path.read_bytes() for path in _root(root).rglob("*.json")}
-    with pytest.raises(ValueError, match="collaboration Goal is stopped or archived"):
+    with pytest.raises(ValueError, match="stopped or archived"):
         deliver(root, registry, session=lark_session, turn=lark_turn, request=request)
     assert before == {path: path.read_bytes() for path in _root(root).rglob("*.json")}
 
@@ -690,7 +690,7 @@ def test_actual_manager_turn_delivers_and_reports_host_receipt(fixture, monkeypa
         assert created and completed["status"] == "completed", completed
         response = completed["response"]
         assert response["context_handoff_receipt"]["status"] == "delivered"
-        assert "已将原消息交给 worker" in response["message"]
+        assert "已将原消息交给 research / worker" in response["message"]
         assert response["proposals"] == [] and response["gate"] is None
         assert len(pending(root, "research", "worker")["items"]) == 1
         assert registry.read_bytes() == original_registry

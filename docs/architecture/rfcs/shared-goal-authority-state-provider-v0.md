@@ -1416,10 +1416,17 @@ evidence at 1,000 commits/64 KiB now reports 16 checkpoints, a 63-commit replay
 budget, one checkpoint history read and 1,048,576 retained projection bytes plus
 126,714 delta bytes against 65,536,000 bytes for one copy per commit.
 
-This is still not completion of lane L. File and NoKV continue to retain and
-decode their complete journal on every load, so bounded recovery is a property
-of the embedded candidate rather than cross-provider parity; the SQLite profile
-also still retains receipts and events without pruning. The split
+This is still not completion of lane L. The current comparison uses File's
+checkpoint/delta journal and bounded verified read views, as described in the
+[matched provider comparison](../../reference/sqlite-authority-store.md#short-term-default-decision-and-matched-experiment).
+File rereads and hashes the complete envelope and checks store identity before
+reusing a decoded view; avoiding repeated decoding does not eliminate durable
+publication or large-history verification costs. SQLite historical reads prove
+the covering checkpoint span, and scans return complete states. The shipped
+archive audit already uses indexed receipt batches; qualify that complete
+consumer alongside individual receipt and scan queries. These mechanisms do
+not establish cross-provider recovery parity or NoKV qualification, and SQLite
+still retains receipts and events without pruning. The split
 storage-traffic measurements landed with the matched-capacity entrypoint
 (#4224 batch 1): the formal 64 KiB 10k/100k profile on the reference runtime
 (Node 22.22.3/SQLite 3.51.3, declared local host) measures logical writes at

@@ -205,6 +205,7 @@ def derive_periodic_report_stage_completion_from_runs(
     normalized_agent_id = _text(agent_id)
     if not normalized_agent_id:
         return None
+    current_vision: Mapping[str, Any] | None = None
     successor_vision: Mapping[str, Any] | None = None
     closed_vision: Mapping[str, Any] | None = None
     outcome_checkpoint: Mapping[str, Any] | None = None
@@ -215,6 +216,8 @@ def derive_periodic_report_stage_completion_from_runs(
             vision["generated_at"] = _text(run.get("generated_at"))
         if _text(vision.get("agent_id")) != normalized_agent_id:
             continue
+        if current_vision is None:
+            current_vision = vision
         if successor_vision is None and not goal_vision_state_is_closed(
             vision.get("state")
         ):
@@ -232,6 +235,9 @@ def derive_periodic_report_stage_completion_from_runs(
         return None
     terminal_state = _mapping(goal_frontier_projection.get("terminal_state"))
     if _validated_terminal_state(terminal_state):
+        if current_vision is not closed_vision:
+            # Do not skip a newer Vision to reuse an older material closure.
+            return None
         return derive_periodic_report_stage_completion(
             closed_vision=closed_vision,
             outcome_checkpoint=outcome_checkpoint,

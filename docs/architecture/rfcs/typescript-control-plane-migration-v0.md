@@ -944,6 +944,25 @@ This closes that T3/L5 consumer family, not D1 permanent display freshness,
 D2 durability, D3 whole-Goal qualification or default-provider selection. The
 remaining work is classified in the current reconciled inventory.
 
+Direct Turn post-writeback composition now uses the original canonical Todo
+transaction instead of reconstructing a frontier from the latest Goal state.
+Refresh retains a compact planning-source anchor; TypeScript validates lineage,
+revision and retained history, and terminal closeout resolves its distinct
+operation/completion receipt through the existing owner. Python adapts those
+facts into the existing periodic-report policy and drains hooks on first return
+and replay without another primary effect or quota spend. File/SQLite public
+CLI qualification covers default-off parity, optional-source failure, later
+mutation and rejection of a superseded terminal stage. A genuine milestone is
+qualified through the existing ordered CLI completion/refresh journey, including
+exact recovery after a later Todo without repeating refresh or spend. Direct
+Turn milestone delivery remains partial pending native accepted-successor
+producer integration and its lawful replanning journey. Real PostgreSQL
+qualifies the shared historical read. Large results reuse private snapshot
+transport with its unchanged 64 MiB cap. This advances T3 source adoption, not
+atomic refresh/Todo persistence or full D1–D3: legacy/unanchored source recovery,
+the full PostgreSQL Turn journey and frontend/Lark delivery remain open under
+the existing owners. See the [hook source boundary](../../reference/protocols/periodic-report-v0.md#post-writeback-hook-boundary).
+
 Todo summary lanes and pre-limit work counts now share `todos/summary_lanes.ts`.
 Python's lane classification and hidden-work inference loops are removed; quota
 recomputes counts after scope selection and carries incomplete source knowledge

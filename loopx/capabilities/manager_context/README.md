@@ -554,6 +554,24 @@ this brief and live receiver/return facts in place. Compatible requests without
 a brief retain their existing shape and identity. A changed brief under the same
 ingress identity is a conflict, not a second delegation.
 
+The shared Chat handoff acknowledgment summarizes the existing brief's purpose,
+recipient-selection context, constraints, acceptance and return requirement.
+Long fields and lists have a visibly abbreviated preview; the receiver gets the
+complete brief unchanged. Start the context with the evidence-based selection
+reason and request interpretation, rather than private chain-of-thought.
+The acknowledgment names both Goal and Agent and distinguishes inbox delivery
+from governed execution submission. Delivery alone leaves receiver execution
+unverified; even a refused sender-side launch cannot prove that the receiver has
+not independently started. Model-authored prose cannot override those facts.
+This applies to the shared App, Goal and Lark handoff path; it changes neither
+grants, dispatch, request identity nor the automatic result-return path.
+
+The packaged Chat [before](../../../docs/assets/handoff-ack/before.png) and
+[after](../../../docs/assets/handoff-ack/after.png) views use the same synthetic
+request and production context delivery, with a scripted model-protocol host.
+They show presentation and receipt handling, not real-model routing or receiver
+execution.
+
 Registered workers can ask another worker of the **same Goal on the same host**
 for help or independent review:
 
