@@ -3340,6 +3340,16 @@ sustained/platform qualification and release-default activation; none of those
 gates is replaced by this checkpoint. No old writer or historical backup reader
 is retired by this change.
 
+**L9 App recovery checkpoint.** Post-commit creation must retain the original
+operation/workspace, initial Todo identities and accepted Session/Turn when
+first-Host startup or transport fails. The typed action review owner projects
+committed steps separately from completion and offers original-operation retry;
+the transport reuses native Todo and Turn idempotency, not a new decision owner.
+Qualify single/multiple-Goal and non-Git workspaces, response loss/restart,
+conflicting identities and provider refusal through installed CLI/HTTP and the
+packaged App. This bounded recovery closes no real-model first-Turn, L8/D3 or
+formal D2 acceptance and retires no historical recovery reader.
+
 **Earlier 2026-09-24 implementation context.** Display refresh advances
 projection recovery/client closure without claiming every consumer qualified. SQLite #4910 added the larger measurement axes; #4224 records
 failed 1 MiB receipt/scan budgets and still-missing recovery/soak evidence.
