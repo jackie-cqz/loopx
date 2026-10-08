@@ -144,6 +144,28 @@ export function todoUpdateLeaseRecovery(head: JsonObject, input: CoordinationTod
       reason: "A leased update requires the actor to own the Todo claim. Reconcile ownership before acquiring execution authority."};
   }
   const dependency = todoExecutionDependencyRejection(index.todos, input.todo_id);
+  // Execution must continue to wait. If the owner has instead reviewed this
+  // dependency as obsolete, expose the existing administrative lifecycle;
+  // clearing it directly with an inactive execution proof is still rejected.
+  const dependencyPause = {...input, patch: {}, clear_fields: [],
+    lease_idempotency_key: null, lease_expected_version: null,
+    planning_intent: {status: "blocked", clear_resume_when: true, reason: "Reviewed obsolete dependency"}};
+  if (dependency !== null && mode === "hard_lease" && leaseState === "released" &&
+      sameOwner && todo.claimed_by === input.actor_agent_id && todo.task_class === "advancement_task" &&
+      isBlockedLifecycleTransition(dependencyPause, todo) &&
+      blockedLifecycleRejection({goal_id: input.goal_id, todo_id: input.todo_id,
+        actor_agent_id: input.actor_agent_id, registered_agents: input.registered_agents,
+        lease: index.leases.get(input.todo_id), lease_idempotency_key: null,
+        lease_expected_version: null, now: input.now}) === null) {
+    return {...base, action: "resolve_lifecycle_edit", reason_code: dependency.code,
+      reason: "Keep waiting if the dependency remains valid. For an evidence-backed owner replan, first block the unchanged Todo and clear its obsolete wait through the existing lifecycle, then reopen it. Each step requires fresh provider CAS and its own operation identity; neither consumes an old lease or grants execution. Do not bundle copy, evidence, requirements or ownership edits. Acquire a fresh execution lease afterwards.",
+      lifecycle_replan: {condition: "owner_reviewed_obsolete_dependency", steps: [
+        {command: "loopx todo update --status blocked --clear-resume-when --reason '<reviewed obsolete dependency>'"},
+        {command: "loopx todo update --status open --clear-resume-when --reason '<reviewed new route>'"},
+      ], goal_id: input.goal_id, todo_id: input.todo_id, agent_id: input.actor_agent_id,
+      requires_flags: ["--update-operation-id", "--update-expected-provider-revision"],
+      execution_proof: "omit", next_execution: "acquire_fresh_lease"}};
+  }
   if (dependency !== null) return {...base, action: "resolve_acquire_rejection",
     reason_code: dependency.code, reason: dependency.reason};
   const retry = {command: "loopx todo update",

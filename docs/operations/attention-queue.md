@@ -169,6 +169,36 @@ resulting Markdown shape is:
 Status lifts those checkboxes into `user_todos` and `agent_todos`, so dashboard
 attention stays human-readable and agent-facing status remains actionable.
 
+### Replanning an obsolete completion dependency
+
+An open advancement Todo with an unmet `todo_done` wait cannot acquire an
+execution lease. Directly clearing its wait with released lease history remains
+fenced. If the original owner has evidence that the wait is obsolete, use the
+existing administrative lifecycle rather than inventing an execution grant:
+
+1. Read the exact Todo, claim, inactive lease and current provider revision.
+2. With a fresh CAS and stable operation identity, run `todo update --status
+   blocked --clear-resume-when --reason '<reviewed obsolete dependency>'`.
+3. Read back the committed blocked state, then use its fresh CAS and a different
+   operation identity for `todo update --status open --clear-resume-when --reason
+   '<reviewed new route>'`.
+4. Acquire a fresh execution lease before editing copy, evidence or work results.
+
+Both updates require the original Goal/Todo/actor arguments plus
+`--update-operation-id` and `--update-expected-provider-revision`. Omit old
+execution-proof flags and do not bundle ownership, requirements, copy, evidence
+or completion changes. Keep the dependency when it is still valid. A stale CAS,
+active holder or unauthorized actor still rejects; planning does not complete
+the prerequisite, release another actor's work or settle a Turn. The diagnostic
+`recovery.lifecycle_replan` describes these steps only for the same claim owner
+with released history under hard-lease coordination; it does not execute them.
+
+有证据表明原依赖已经过时时，同 owner 可沿现有“blocked → open”生命周期重规划：
+每步冷读原任务并用 fresh CAS 和独立幂等标识，只传 status、clear-resume-when 和
+reason，不携带旧执行租约、不捆绑文案/证据/要求/归属。两步不授执行权限，之后仍须
+取得新的合法 lease；原依赖仍有效时继续等待。恢复诊断提供现有入口，不放宽门禁，
+不伪造前置任务完成或 Turn 结算；默认升级与 App/Lark 操作路径须分别验收。
+
 `read_only_project_map` means a connected read-only project now has a standard
 map run from `loopx read-only-map`. The next Codex action should use the
 map's recommended action or upgrade to a project-specific adapter when needed.

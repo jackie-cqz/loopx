@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -252,6 +253,90 @@ def deferred_hard_lease_fixture(
                                    state_path=state, provider=provider)
     state.unlink()
     return registry, state
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_dependency_replan_uses_existing_inactive_lifecycle_then_fresh_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str,
+) -> None:
+    if provider == "sqlite":
+        isolate_sqlite_runtime(tmp_path, monkeypatch)
+    registry, state = fixture(tmp_path, False)
+    todos = list_goal_todos(registry_path=registry, goal_id="goal-a")["todos"]
+    target = next(todo for todo in todos if todo["todo_id"] == "todo_target")
+    target.update(resume_when="todo_done:todo_other", successor_todo_ids=["todo_other"])
+    projection = build_todo_runtime_shadow_projection(
+        goal_id="goal-a", todos=todos, handoff_mode="hard_lease",
+    )
+    retained = {
+        "todo_id": "todo_target", "owner": "agent-a", "status": "released",
+        "idempotency_key": "retired-execution", "version": 4, "lease_epoch": 2,
+        "expires_at": "2020-01-01T00:00:00Z", "write_scopes": [],
+    }
+    projection["leases"] = [retained]
+    initialize_canonical_authority(tmp_path / "runtime", "goal-a", projection,
+                                   state_path=state, provider=provider)
+    state.unlink()
+
+    def lease(action: str, *args: str) -> tuple[int, dict]:
+        process = subprocess.run([
+            sys.executable, "-m", "loopx.cli", "--format", "json", "--registry", str(registry),
+            "task-lease", action, "--goal-id", "goal-a", "--todo-id", "todo_target", *args,
+        ], capture_output=True, text=True, timeout=45)
+        return process.returncode, json.loads(process.stdout)
+
+    before = records(registry)
+    code, rejection = lease("acquire", "--owner", "agent-a", "--idempotency-key", "next-execution")
+    assert code == 1 and rejection["error_code"] == "todo_dependency_pending"
+    failed = update(registry, "--clear-resume-when", "--reason", "Reviewed replan",
+                    "--update-operation-id", "direct-clear", ok=False)
+    assert failed["error_code"] == "handoff_mode_requires_lease"
+    assert failed["recovery"]["execution_authority_granted"] is False
+    # The candidate makes the existing two-step route discoverable; it does
+    # not add an admission exception for an old execution proof.
+    assert failed["recovery"]["action"] == "resolve_lifecycle_edit"
+    assert len(failed["recovery"]["lifecycle_replan"]["steps"]) == 2
+    assert records(registry) == before
+
+    guide = failed["recovery"]["lifecycle_replan"]
+    assert (guide["goal_id"], guide["todo_id"], guide["agent_id"]) == ("goal-a", "todo_target", "agent-a")
+    assert guide["execution_proof"] == "omit" and guide["next_execution"] == "acquire_fresh_lease"
+    basis = list_goal_todos(registry_path=registry, goal_id="goal-a")["authority_read"]["provider_revision"]
+    pause = [*shlex.split(guide["steps"][0]["command"])[3:],
+             "--update-operation-id", "pause-obsolete-wait", "--update-expected-provider-revision", basis]
+    assert update(registry, *pause, "--dry-run")["status"] == "planned"
+    assert records(registry) == before
+    assert update(registry, *pause)["status"] == "applied"
+    assert update(registry, *pause)["status"] == "replayed"
+    blocked = records(registry)
+    assert blocked["todo_target"]["status"] == "blocked"
+    assert not blocked["todo_target"].get("resume_when")
+    assert lease("inspect")[1]["lease"]["status"] == "released"
+    code, rejected = lease("acquire", "--owner", "agent-a", "--idempotency-key", "paused-execution")
+    assert code == 1 and rejected["error_code"] == "todo_not_open"
+    update(registry, "--status", "open", "--clear-resume-when", "--reason", "Reviewed new route",
+           "--evidence", "Bundled evidence is a separate leased edit", ok=False)
+    assert records(registry) == blocked
+    reopen = shlex.split(guide["steps"][1]["command"])[3:]
+    update(registry, *reopen, "--update-operation-id", "stale-reopen",
+           "--update-expected-provider-revision", basis, ok=False)
+    assert records(registry) == blocked
+    current_basis = list_goal_todos(registry_path=registry, goal_id="goal-a")["authority_read"]["provider_revision"]
+    resumed = update(registry, *reopen, "--update-operation-id", "resume-new-route",
+                     "--update-expected-provider-revision", current_basis)
+    assert resumed["status"] == "applied"
+    after = records(registry)
+    assert after["todo_target"]["status"] == "open"
+    assert after["todo_target"]["text"] == before["todo_target"]["text"]
+    assert after["todo_target"]["claimed_by"] == before["todo_target"]["claimed_by"]
+    assert after["todo_target"]["successor_todo_ids"] == before["todo_target"]["successor_todo_ids"]
+    assert after["todo_other"] == before["todo_other"]
+    # Reopening has not changed the retained execution identity or granted one.
+    assert lease("inspect")[1]["lease"]["status"] == "released"
+    code, acquired = lease("acquire", "--owner", "agent-a", "--idempotency-key", "fresh-execution")
+    assert code == 0 and acquired["acquired"]
+    assert acquired["lease"]["version"] == 5 and acquired["lease"]["lease_epoch"] == 3
+    assert acquired["source_authority"] == f"{provider}_v0"
 
 
 @pytest.mark.parametrize("provider", ["file", "sqlite"])

@@ -790,6 +790,66 @@ test("retained lease diagnostics distinguish recovery without granting execution
   }
 });
 
+async function dependencyReplanFixture(overrides: Record<string, unknown> = {}) {
+  const {store, request} = await seeded({todo_id: "todo_target", task_class: "advancement_task", resume_when: "todo_done:todo_other"});
+  const loaded = await store.loadAuthority();
+  if (loaded.status !== "loaded") assert.fail("missing fixture");
+  const prerequisite = todo({todo_id: "todo_other", claimed_by: "agent-b"});
+  const todos = [...loaded.head.todos as Record<string, unknown>[], prerequisite]
+    .sort((left, right) => String(left.todo_id).localeCompare(String(right.todo_id)));
+  const retained = {todo_id: "todo_target", owner: "agent-a", idempotency_key: "retired-private-key",
+    status: "released", version: 4, lease_epoch: 2, expires_at: "2026-09-04T00:00:00Z", write_scopes: []};
+  await store.commitAuthority({operation_id: "dependency-fixture", expected_provider_revision: loaded.provider_revision,
+    events: [], receipts: [], next_projection: {...loaded.head, handoff_mode: "hard_lease", todos,
+      todo_read_model: {schema_version: TODO_DOMAIN_READ_RECORD_SCHEMA, todo_count: 2,
+        records_sha256: canonicalAuthoritySha256(todos), contract_fields: [...TODO_DOMAIN_RECORD_CONTRACT.fields]},
+      leases: [retained], ...overrides}});
+  return {store, request: {...request, todo_id: "todo_target"}, retained, todos};
+}
+
+test("obsolete completion wait exposes existing lifecycle while direct mutation remains fenced", async () => {
+  const {store, request, retained} = await dependencyReplanFixture();
+  const before = await store.loadAuthority();
+  const edit = {...request, patch: {}, clear_fields: [],
+    planning_intent: {clear_resume_when: true, reason: "Reviewed obsolete dependency"}};
+  const result = await executeCoordinationTodoUpdate(store, edit);
+  assert.equal(result.status, "failed");
+  assert.equal(result.reason_code, "handoff_mode_requires_lease", JSON.stringify(result));
+  const recovery = result.recovery as Record<string, unknown>;
+  assert.equal(recovery.action, "resolve_lifecycle_edit");
+  assert.equal(recovery.execution_authority_granted, false);
+  const replan = recovery.lifecycle_replan as Record<string, unknown>;
+  assert.equal(replan.condition, "owner_reviewed_obsolete_dependency");
+  assert.equal(replan.execution_proof, "omit");
+  assert.equal(replan.next_execution, "acquire_fresh_lease");
+  assert.equal((replan.steps as unknown[]).length, 2);
+  assert.equal(JSON.stringify(result).includes(String(retained.idempotency_key)), false);
+  assert.deepEqual(await store.loadAuthority(), before);
+  assert.equal((await store.readReceipt(request.operation_id)).status, "missing");
+});
+
+for (const [label, overrides, actor] of [
+  ["legacy mode", {handoff_mode: "legacy"}, "agent-a"],
+  ["soft claim mode", {handoff_mode: "soft_claim"}, "agent-a"],
+  ["no history", {leases: []}, "agent-a"],
+  ["foreign actor", {}, "agent-b"],
+  ["active lease", {leases: [{todo_id: "todo_target", owner: "agent-a", idempotency_key: "active-key",
+    status: "active", version: 5, lease_epoch: 3, expires_at: "2026-09-06T00:00:00Z", write_scopes: []}]}, "agent-a"],
+  ["expired lease", {leases: [{todo_id: "todo_target", owner: "agent-a", idempotency_key: "expired-key",
+    status: "active", version: 5, lease_epoch: 3, expires_at: "2026-09-04T00:00:00Z", write_scopes: []}]}, "agent-a"],
+  ["foreign history", {leases: [{todo_id: "todo_target", owner: "agent-b", idempotency_key: "foreign-key",
+    status: "released", version: 5, lease_epoch: 3, expires_at: "2026-09-04T00:00:00Z", write_scopes: []}]}, "agent-a"],
+] as const) test(`dependency lifecycle guidance does not broaden ${label}`, async () => {
+  const {store, request} = await dependencyReplanFixture(overrides);
+  const before = await store.loadAuthority();
+  const result = await executeCoordinationTodoUpdate(store, {...request, actor_agent_id: actor,
+    patch: {}, clear_fields: [], planning_intent: {clear_resume_when: true, reason: "Reviewed route"}});
+  assert.equal(result.status, "failed");
+  assert.equal((result.recovery as Record<string, unknown> | undefined)?.lifecycle_replan, undefined);
+  assert.deepEqual(await store.loadAuthority(), before);
+  assert.equal((await store.readReceipt(request.operation_id)).status, "missing");
+});
+
 
 test("recovery preserves stale-proof rejection and never offers foreign proof", async () => {
   for (const [proof, code] of [
