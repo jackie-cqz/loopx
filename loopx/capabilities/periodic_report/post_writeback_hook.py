@@ -22,7 +22,7 @@ from ...control_plane.effect_runtime import (
 )
 from ...control_plane.todos.quota_summary import summarize_user_todos_for_quota
 from ...control_plane.todos.todo_index import MAX_TODO_INDEX_ROLLOUT_EVENTS_PER_GOAL
-from ...history import collect_history, load_registry
+from ...history import collect_history, load_index_snapshot, load_registry
 from ...paths import resolve_runtime_root
 from ...registry import registry_goals
 from ...rollout_event_log import load_rollout_events, rollout_event_log_path
@@ -266,50 +266,71 @@ def build_periodic_report_post_writeback_projection(
         )
     else:
         latest_runs = list(source_runs)
-    settled_ack: Mapping[str, Any] | None = None
-    for run in latest_runs:
-        if not isinstance(run, Mapping):
-            continue
-        run_agent_id = str(run.get("agent_id") or "").strip()
-        vision = run.get("agent_vision")
+    # Terminal settlement follows the current history. A successor milestone is
+    # only claimed below, from the exact durable refresh that carries its
+    # accepted ACK and selected Vision.
+    receipt = derive_periodic_report_stage_completion_from_runs(
+        latest_runs=latest_runs,
+        agent_id=normalized_agent_id,
+        goal_frontier_projection=projection,
+    )
+    if receipt is None:
+        source_run_path = payload.get("json_path")
+        if not isinstance(source_run_path, str) or not source_run_path:
+            return {}
+        records = load_index_snapshot(
+            runtime_root / "goals" / goal_id / "runs" / "index.jsonl",
+            include_artifact_status=False,
+        ).records
+        matches = [
+            position for position, run in enumerate(records)
+            if run.get("json_path") == source_run_path
+        ]
+        if len(matches) != 1:
+            return {}
+        # Index append position, including equal-clock writes, fixes the
+        # Vision history visible to this source refresh on exact retry.
+        source_refresh_runs = list(
+            reversed(records[max(0, matches[0] - 63):matches[0] + 1])
+        )
+        source_run = source_refresh_runs[0]
+        run_agent_id = str(source_run.get("agent_id") or "").strip()
+        vision = source_run.get("agent_vision")
         vision_agent_id = (
             str(vision.get("agent_id") or "").strip()
             if isinstance(vision, Mapping)
             else ""
         )
         if run_agent_id and vision_agent_id and run_agent_id != vision_agent_id:
-            continue
+            return {}
         attributed_agent_id = run_agent_id or vision_agent_id
         if attributed_agent_id != normalized_agent_id:
-            continue
-        raw_ack = run.get("autonomous_replan_ack")
+            return {}
+        raw_ack = source_run.get("autonomous_replan_ack")
         ack = dict(raw_ack) if isinstance(raw_ack, Mapping) else None
-        if ack is not None:
-            ack["agent_id"] = attributed_agent_id
         semantic_delta = ack.get("semantic_delta") if isinstance(ack, Mapping) else None
         if (
-            isinstance(ack, Mapping)
-            and ack.get("recorded") is True
-            and isinstance(semantic_delta, Mapping)
-            and "vision_successor_required"
-            in {str(value) for value in semantic_delta.get("trigger_kinds") or []}
+            not isinstance(ack, Mapping)
+            or ack.get("recorded") is not True
+            or not isinstance(semantic_delta, Mapping)
+            or "vision_successor_required"
+            not in {str(value) for value in semantic_delta.get("trigger_kinds") or []}
         ):
-            settled_ack = ack
-            break
-    settled_obligation = None
-    if settled_ack is not None:
-        settled_obligation = {
-            "frontier_identity": settled_ack.get("frontier_identity"),
-            "agent_id": normalized_agent_id,
-            "triggers": [{"kind": "vision_successor_required"}],
-        }
-    receipt = derive_periodic_report_stage_completion_from_runs(
-        latest_runs=latest_runs,
-        agent_id=normalized_agent_id,
-        goal_frontier_projection=projection,
-        settled_replan_obligation=settled_obligation,
-        settled_replan_ack=settled_ack,
-    )
+            return {}
+        ack["agent_id"] = attributed_agent_id
+        receipt = derive_periodic_report_stage_completion_from_runs(
+            latest_runs=source_refresh_runs,
+            agent_id=normalized_agent_id,
+            goal_frontier_projection=projection,
+            settled_replan_obligation={
+                "frontier_identity": ack.get("frontier_identity"),
+                "obligation_id": semantic_delta.get("obligation_id"),
+                "agent_id": normalized_agent_id,
+                "triggers": [{"kind": "vision_successor_required"}],
+            },
+            settled_replan_ack=ack,
+            source_run_path=source_run_path,
+        )
     if receipt is None:
         return {}
     result: dict[str, object] = {"stage_completion": receipt}
