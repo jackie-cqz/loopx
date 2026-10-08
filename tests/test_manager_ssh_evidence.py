@@ -168,20 +168,19 @@ def test_export_uses_canonical_todos_and_never_returns_owner_private_continuatio
     registry.write_text(
         json.dumps({"goals": [{"id": "remote-goal", "repo": str(tmp_path)}]})
     )
+    todo = {
+        "todo_id": "t1",
+        "text": "Validate delivery",
+        "status": "open",
+        "note": "Private deliberation",
+    }
     monkeypatch.setattr(
         details,
         "list_goal_todos",
-        lambda **_: {
+        lambda **kwargs: {
             "ok": True,
             "source": "canonical",
-            "todos": [
-                {
-                    "todo_id": "t1",
-                    "text": "Validate delivery",
-                    "status": "open",
-                    "note": "Private deliberation",
-                }
-            ],
+            **({"todo": todo} if kwargs.get("todo_id") else {"todos": [todo]}),
         },
     )
     args = SimpleNamespace(

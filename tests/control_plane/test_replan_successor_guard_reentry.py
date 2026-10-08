@@ -242,7 +242,7 @@ def test_invalidated_successor_cannot_rebind_or_close_original_turn(
          "--todo-id", added["todo_id"], *edit)
     # Invalidation may leave the original duty open, which is a legal guard
     # read. It must not grant successor settlement from a stale creation ACK.
-    guarded = _guard(call, expected_code=1 if later_vision and invalidation == "unclaimed" else 0)
+    guarded = _guard(call, expected_code=1 if invalidation == "unclaimed" else 0)
     assert guarded["heartbeat_receipt"]["settlement_identity"] == identity
     assert guarded.get("selected_todo") is None
     assert (guarded.get("autonomous_replan_obligation") or {}).get("resolution_mode") != "receipt_bound_replan_settlement"
