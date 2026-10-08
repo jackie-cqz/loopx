@@ -14,6 +14,7 @@ from ..effect_runtime import effect_runtime_result
 from ..goals.acceptance import inspect_goal_acceptance
 from ..goals.state_resolution import resolve_goal_state
 from ..todos.list_readback import list_goal_todos
+from ..todos.summary_item import todo_text_content_revision
 
 
 def _source_content(read, *, registry_path, runtime_root, goal_id, todo_id):
@@ -29,8 +30,15 @@ def _source_content(read, *, registry_path, runtime_root, goal_id, todo_id):
         return inspect_goal_acceptance(registry_path=registry_path, goal_id=goal_id,
             runtime_root=str(runtime_root))
     if source == "selected_todo":
-        return list_goal_todos(registry_path=registry_path, goal_id=goal_id,
+        result = list_goal_todos(registry_path=registry_path, goal_id=goal_id,
             todo_id=todo_id, runtime_root_arg=str(runtime_root))
+        todo = result.get("todo")
+        if result.get("matched") is True and result.get("ambiguous") is not True \
+                and isinstance(todo, dict) and isinstance(todo.get("text"), str):
+            revision = todo_text_content_revision(todo["text"])
+            if revision:
+                todo["content_revision"] = revision
+        return result
     raise ValueError("unregistered work context source")
 
 
@@ -91,6 +99,17 @@ def attach_work_context(payload: dict[str, Any], *, registry_path: Path,
         "hook_dispatch": hook_dispatch,
     }, large_local_snapshot=True)
     channel.update(projected)
+    selected_todo = payload.get("selected_todo")
+    if isinstance(selected_todo, dict):
+        selected_todo.pop("content_revision", None)
+    work_context = channel.get("work_context")
+    if isinstance(work_context, dict):
+        sources = work_context.get("sources")
+        for source in sources if isinstance(sources, list) else []:
+            content = source.get("content") if isinstance(source, dict) else None
+            todo = content.get("todo") if isinstance(content, dict) else None
+            if isinstance(todo, dict):
+                todo.pop("content_revision", None)
     if not projected["work_context"]["complete"]:
         channel["delivery_allowed"] = False
     # Bodies have one carrier. Historical pointers are not another instruction

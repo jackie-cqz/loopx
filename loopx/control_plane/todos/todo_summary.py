@@ -37,6 +37,7 @@ from .contract import (
     normalize_todo_task_class,
     todo_done_for_status,
 )
+from .summary_item import todo_text_content_revision
 from .completion_validation_projection import project_completion_validation_authority
 from .frontier_revision import frontier_source_facts, TODO_FRONTIER_REVISION_INDEX_SCHEMA_VERSION
 from .handoff_gate import build_todo_handoff_gate_states
@@ -134,6 +135,20 @@ def normalize_todo_text(text: str, *, limit: int | None = 500) -> str:
     if limit is None or len(compact) <= limit:
         return compact
     return compact[: limit - 1].rstrip() + "…"
+
+
+def _structured_todo_text_fields(
+    item: dict[str, Any],
+    *,
+    text_limit: int | None,
+    include_content_revision: bool,
+) -> tuple[str, str | None]:
+    source_text = str(item.get("text") or "")
+    content_revision = (
+        todo_text_content_revision(source_text)
+        if include_content_revision else None
+    )
+    return normalize_todo_text(source_text, limit=text_limit), content_revision
 
 
 def todo_archive_state(item: dict[str, Any]) -> str:
@@ -288,8 +303,13 @@ def structured_todo_item(
     source_section: str | None,
     archive_state: str = "active",
     text_limit: int | None = 500,
+    include_content_revision: bool = False,
 ) -> dict[str, Any]:
-    text = normalize_todo_text(str(item.get("text") or ""), limit=text_limit)
+    text, content_revision = _structured_todo_text_fields(
+        item,
+        text_limit=text_limit,
+        include_content_revision=include_content_revision,
+    )
     priority, title = todo_priority_parts(text)
     index = item.get("index")
     explicit_status = normalize_todo_status(item.get("status"))
@@ -319,6 +339,8 @@ def structured_todo_item(
             ),
         }
     )
+    if content_revision:
+        normalized["content_revision"] = content_revision
     action_kind = normalize_todo_action_kind(item.get("action_kind"))
     if action_kind:
         normalized["action_kind"] = action_kind
@@ -427,6 +449,8 @@ def compact_todo_item(item: dict[str, Any]) -> dict[str, Any]:
             continue
         if item.get(key) is not None:
             compact[key] = item.get(key)
+    if item.get("content_revision"):
+        compact["content_revision"] = item["content_revision"]
     if isinstance(item.get("goal_acceptance_guard"), dict):
         compact["goal_acceptance_guard"] = item["goal_acceptance_guard"]
     attach_todo_handoff_note(compact)
@@ -769,6 +793,7 @@ def _structured_todo_group_items(
     source_section: str | None,
     role: str | None,
     text_limit: int | None,
+    include_content_revision: bool,
 ) -> list[dict[str, Any]]:
     return [
         structured_todo_item(
@@ -777,6 +802,7 @@ def _structured_todo_group_items(
             source_section=source_section,
             archive_state=todo_archive_state(item),
             text_limit=text_limit,
+            include_content_revision=include_content_revision,
         )
         if isinstance(item, dict)
         else item
@@ -803,6 +829,7 @@ def _structured_resume_source_items(
                 if item.get("archive_state") is not None
                 else TODO_ARCHIVE_STATE_ACTIVE
             ),
+            include_content_revision=True,
         )
         for item in (items or [])
         if isinstance(item, dict)
@@ -957,6 +984,7 @@ def compact_todo_group(
     available_capabilities: Any = None,
     item_limit: int | None = MAX_STATUS_TODOS_PER_ROLE,
     text_limit: int | None = 500,
+    include_content_revision: bool = True,
     include_task_orchestration_authority: bool = False,
     vision_runs: list[dict[str, Any]] | None = None,
     evaluated_at: str | None = None,
@@ -968,6 +996,7 @@ def compact_todo_group(
         source_section=source_section,
         role=role,
         text_limit=text_limit,
+        include_content_revision=include_content_revision,
     )
     _apply_resume_conditions(
         items,

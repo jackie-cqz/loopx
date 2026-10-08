@@ -181,6 +181,7 @@ CONSUMER_MODULES = (
     "loopx.control_plane.collaboration.inbox",
     "loopx.control_plane.collaboration.links",
     "loopx.control_plane.collaboration.peers",
+    "loopx.control_plane.collaboration.result_files",
     "loopx.control_plane.coordination.local_authority_shadow_outbox",
     "loopx.control_plane.coordination.shadow_management",
     "loopx.control_plane.digest_envelope",

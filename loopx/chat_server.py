@@ -92,7 +92,7 @@ from .extensions.runtime import (
 )
 from .history import load_registry
 from .chat_completed_todos import CompletedTodoPages, CompletedTodoRequestMixin
-from .chat_explore_results import ExploreResultsRequestMixin
+from .presentation.explore_results_api import ExploreResultsRequestMixin
 from .chat_todo_detail import TodoDetailRequestMixin
 from .kiro_cli_goal_mode import KIRO_CLI_BIN
 from .paths import resolve_runtime_root

@@ -928,6 +928,8 @@ def test_quota_cli_keeps_full_agent_todo_diagnostics_on_explicit_cold_path(
 
     assert default_exit_code == 0, default_text
     assert detail_exit_code == 0, detail_text
+    assert '"content_revision"' not in default_text
+    assert '"content_revision"' not in detail_text
     default_payload = json.loads(default_text)
     detail_payload = json.loads(detail_text)
     default_summary = default_payload["agent_todo_summary"]

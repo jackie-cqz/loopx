@@ -3,6 +3,7 @@ from __future__ import annotations
 from loopx.control_plane.quota.selected_todo_projection import (
     selected_todo_projection,
 )
+from loopx.control_plane.todos.summary_item import todo_text_content_revision
 
 
 def test_selected_todo_preserves_capability_binding_ref() -> None:
@@ -77,3 +78,24 @@ def test_selected_todo_screens_raw_continuation_hint() -> None:
 
     assert selected is not None
     assert "continuation_hint" not in selected
+
+
+def test_selected_deferred_resume_adds_missing_content_revision() -> None:
+    source_text = "Inspect the ready successor and verify its contract."
+    selected = selected_todo_projection(
+        agent_lane_next_action=None,
+        work_lane_contract=None,
+        agent_scope_frontier={
+            "action": "successor_replan_required",
+            "deferred_resume_candidates": [
+                {
+                    "todo_id": "todo_resume001",
+                    "status": "deferred",
+                    "text": source_text,
+                }
+            ],
+        },
+    )
+
+    assert selected is not None
+    assert selected["content_revision"] == todo_text_content_revision(source_text)

@@ -57,6 +57,7 @@ def test_exact_task_cli_http_preserve_full_current_and_retained_request(tmp_path
         rejected = cli("--todo-id", todo_id, "--thin", expected_code=1)
         assert rejected["ok"] is False
         assert "Exact Todo reads return full requirements" in rejected["error"]
+        assert "remove --thin" in rejected["error"]
         assert "FINAL_ACCEPTANCE" not in rejected["error"]
 
     server = ChatHTTPServer(("127.0.0.1", 0), ChatRequestHandler)

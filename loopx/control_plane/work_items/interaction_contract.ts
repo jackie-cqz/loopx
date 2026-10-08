@@ -10,6 +10,7 @@ import {
   jsonObject,
 } from "../runtime_decode.ts";
 import { EffectiveAction } from "../quota/effective_action.generated.ts";
+import { ENVELOPED_SHA256_PATTERN } from "../content_digest.ts";
 
 import type { JsonObject } from "../effect_program.ts";
 
@@ -252,7 +253,10 @@ export function projectInteractionWorkContext(request: JsonObject): JsonObject {
       valid = content!.matched === true && content!.ambiguous !== true
         && todo.todo_id === selected.todo_id && todo.archive_state !== "archive"
         && todo.status !== "done"
-        && ["status", "claimed_by"].every(field => selected[field] === undefined || selected[field] === todo[field]);
+        && ["status", "claimed_by"].every(field => selected[field] === undefined || selected[field] === todo[field])
+        && typeof selected.content_revision === "string"
+        && ENVELOPED_SHA256_PATTERN.test(selected.content_revision)
+        && selected.content_revision === todo.content_revision;
     }
     if (valid && read.source === "goal_acceptance") {
       valid = jsonObject(content!.goal_acceptance_contract)?.enabled === true;

@@ -141,12 +141,29 @@ test("failed, ambiguous or changed work never fulfills a pre-work read", () => {
     assert.deepEqual(projected.required_reads, [read]);
     assert.equal((projected.work_context as JsonObject).complete, false);
   }
+  const originalRevision = `sha256:${"a".repeat(64)}`;
+  const changedRevision = `sha256:${"b".repeat(64)}`;
+  const revisionChanged = projectInteractionWorkContext({required_reads: [read],
+    selected_todo: {todo_id: "todo_work", status: "open", claimed_by: "agent-a", content_revision: originalRevision},
+    source_results: [{command: read.command, content: {matched: true, todo: {
+      todo_id: "todo_work", status: "open", claimed_by: "agent-a", content_revision: changedRevision,
+    }}}]});
+  assert.deepEqual(revisionChanged.required_reads, [read]);
+  assert.equal((revisionChanged.work_context as JsonObject).complete, false);
+  const revisionMissing = projectInteractionWorkContext({required_reads: [read],
+    selected_todo: {todo_id: "todo_work", status: "open", claimed_by: "agent-a"},
+    source_results: [{command: read.command, content: {matched: true, todo: {
+      todo_id: "todo_work", status: "open", claimed_by: "agent-a", content_revision: originalRevision,
+    }}}]});
+  assert.deepEqual(revisionMissing.required_reads, [read]);
+  assert.equal((revisionMissing.work_context as JsonObject).complete, false);
 });
 
 test("mixed Goal document remains a full progressive read without dropping task requirements", () => {
   const goalRead = {command: "cat -- state.md", source: "goal_state", ordering: "before_work"};
   const taskRead = {command: "read-todo", source: "selected_todo"};
-  const task = {todo_id: "todo_work", status: "open", claimed_by: "agent-a",
+  const taskRevision = `sha256:${"a".repeat(64)}`;
+  const task = {todo_id: "todo_work", status: "open", claimed_by: "agent-a", content_revision: taskRevision,
     text: "Preserve every requirement. ".repeat(400) + "Stop before deployment."};
   const projected = projectInteractionWorkContext({required_reads: [goalRead, taskRead],
     selected_todo: task, source_results: [
