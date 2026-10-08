@@ -1367,7 +1367,7 @@
     },
     {
       "site": "loopx/control_plane/goals/first_party_host_admission.py::<module>.FirstPartyHostGoalAdmission.for_plan::codec_read:load_project_registry#1",
-      "line": 216,
+      "line": 244,
       "column": 17,
       "kind": "codec_read",
       "api": "load_project_registry",
@@ -1375,7 +1375,7 @@
     },
     {
       "site": "loopx/control_plane/goals/first_party_host_admission.py::<module>.capture_first_party_host_goal_ref::codec_read:load_project_registry#1",
-      "line": 167,
+      "line": 195,
       "column": 16,
       "kind": "codec_read",
       "api": "load_project_registry",
@@ -1383,7 +1383,7 @@
     },
     {
       "site": "loopx/control_plane/goals/first_party_host_admission.py::<module>.source_goal_authority::codec_read:load_project_registry#1",
-      "line": 132,
+      "line": 160,
       "column": 20,
       "kind": "codec_read",
       "api": "load_project_registry",
@@ -2159,8 +2159,16 @@
     },
     {
       "site": "loopx/runtime.py::<module>.archive_runtime_goal::codec_read:load_registry#1",
-      "line": 43,
+      "line": 64,
       "column": 16,
+      "kind": "codec_read",
+      "api": "load_registry",
+      "classification": "codec_api"
+    },
+    {
+      "site": "loopx/runtime.py::<module>.archive_runtime_goal::codec_read:load_registry#2",
+      "line": 138,
+      "column": 31,
       "kind": "codec_read",
       "api": "load_registry",
       "classification": "codec_api"

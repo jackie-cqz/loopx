@@ -1400,7 +1400,9 @@ def run_loopx_turn_once(
             _write_journal(journal_path, snapshot)
             return
         try:
-            with goal_admission.source_journal_admission() as source_admission:
+            with goal_admission.source_journal_admission(
+                runtime_root=runtime_root,
+            ) as source_admission:
                 if source_admission is None:
                     raise RuntimeError("source journal admission was not produced")
                 _write_journal(
