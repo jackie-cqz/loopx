@@ -227,6 +227,31 @@ obsolete runtime-only goal. The command only moves files when rerun with
 If the contract check fails, status prepends a high-severity
 `loopx-contract` item before project goals.
 
+## Bound user-action reminder updates
+
+Under canonical `hard_lease`, an OPEN `role=user`, `task_class=user_action`
+reminder without a claim or any retained lease may have its text, note or
+evidence corrected by its exact registered `bound_agent`. Use `todo update`
+with the current `--update-expected-provider-revision` and a stable
+`--update-operation-id`; preview with `--dry-run`, then read back the result.
+An exact retry replays the receipt; a changed retry or stale revision refuses.
+Text keeps the existing title/priority derivation.
+
+This corrects the human-facing obligation without claiming execution authority.
+It does not change status, binding, ownership, decision scope, work requirements
+or the original action's execution state. Cross-agent and excluded actors still
+refuse. User gates, unbound actions, agent Todos, retained leases (including
+expired/released history), and explicit lease proofs retain their ordinary
+admission. Completing an action uses its separate terminal lifecycle contract.
+CLI and other transports share the canonical typed update owner; this rule
+does not activate a notification provider or prove that the reminder was sent.
+
+canonical `hard_lease` 下，尚无 claim 或租约历史的 OPEN `user_action` 可由精确绑定的
+注册 Agent 更新文案、note 和 evidence。更新复用 provider CAS 与操作幂等；不得借此
+改变生命周期、归属、执行要求或决策权限。其他角色、被排除角色、user gate、未绑定
+待办、agent Todo、历史租约及显式租约凭据仍执行原门禁。更新提醒不代表本人已执行，
+也不证明通知送达。
+
 ## Boundary
 
 The queue is safe to show in public docs or a local UI only when goal ids and

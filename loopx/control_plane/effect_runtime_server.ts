@@ -1,7 +1,7 @@
 import { writeSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { flushCompileCache } from "node:module";
-import { chmod, readFile, rm, type FileHandle } from "node:fs/promises";
+import { readFile, rm, type FileHandle } from "node:fs/promises";
 
 import type { JsonObject } from "./effect_program.ts";
 import {
@@ -305,7 +305,6 @@ server.listen(0, "127.0.0.1", async () => {
         // serving a goal is not necessarily the one the caller resolves from PATH.
         runtime_identity: sqliteRuntimeIdentity(),
       });
-      await chmod(infoPath, 0o600);
     });
     publicationComplete = true;
     resolvePublication();

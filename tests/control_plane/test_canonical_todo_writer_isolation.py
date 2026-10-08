@@ -268,3 +268,81 @@ else:
         capture_output=True, text=True, timeout=45,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+@pytest.mark.parametrize("material_change", [False, True])
+@pytest.mark.parametrize("source_writers_present", [False, True], ids=["absent", "present"])
+def test_monitor_recovery_with_source_writer_isolation(
+    tmp_path, monkeypatch, request, provider, material_change, source_writers_present,
+):
+    from test_leased_monitor_poll import LEASE, PROOF
+    from test_monitor_followthrough_contract import GOAL_ID, AGENT_ID
+    from test_native_monitor_poll import _canonical
+
+    if source_writers_present:
+        isolate_sqlite_runtime(tmp_path, monkeypatch)
+    else:
+        request.getfixturevalue("without_source_todo_writers")
+    registry, runtime, display, monitor = _canonical(
+        tmp_path, native=True, provider=provider, lease=LEASE,
+    )
+    display.unlink()
+
+    def cli(*args, succeeds=True):
+        result = subprocess.run(
+            [sys.executable, "-m", "loopx.cli", "--format", "json",
+             "--registry", str(registry), "--runtime-root", str(runtime), *args],
+            cwd=tmp_path, capture_output=True, text=True, timeout=45,
+        )
+        assert (result.returncode == 0) is succeeds, result.stdout + result.stderr
+        return json.loads(result.stdout)
+
+    def current():
+        return cli("todo", "list", "--goal-id", GOAL_ID)
+
+    identity = ["--goal-id", GOAL_ID, "--agent-id", AGENT_ID,
+                "--runtime-profile", "generic_cli", "--turn-instance-id", "monitor-retirement",
+                "--available-capability", "network", "--available-capability", "external_evidence_poll"]
+    guard = cli("quota", "should-run", *identity)
+    assert guard["selected_todo"]["todo_id"] == monitor["todo_id"]
+    before = current()
+    poll = ["quota", "monitor-poll", *identity, "--todo-id", monitor["todo_id"],
+            "--result-hash", "observed-revision", "--use-current-task-lease", "--execute"]
+    if material_change:
+        poll += ["--material-change", "--next-agent-todo", "Validate the observed revision",
+                 "--next-action-kind", "validate"]
+
+    # A missing provider must not use the display or create another authority.
+    backend = runtime / "authority" / f"{provider}-v0"
+    offline = backend.with_name(backend.name + "-offline")
+    backend.rename(offline)
+    try:
+        failed = cli(*poll, succeeds=False)
+        assert failed["ok"] is False
+        assert not backend.exists() and not display.exists()
+    finally:
+        offline.rename(backend)
+    assert current()["todos"] == before["todos"]
+
+    committed = cli(*poll)
+    assert committed["todo_writeback"]["lease_proof"] == PROOF
+    assert committed["todo_writeback"]["material_change_generation"] == int(material_change)
+    after = current()
+    assert len(after["todos"]) == len(before["todos"]) + int(material_change)
+    observed = next(t for t in after["todos"] if t["todo_id"] == monitor["todo_id"])
+    assert observed["result_hash"] == "observed-revision"
+    assert int(observed["consecutive_no_change"]) == int(not material_change)
+    assert display.exists()
+
+    # Recover the same observation after the execution lease is released.
+    assert cli("task-lease", "release", "--goal-id", GOAL_ID,
+               "--todo-id", monitor["todo_id"], "--owner", AGENT_ID,
+               "--idempotency-key", PROOF["idempotency_key"],
+               "--expected-version", str(PROOF["expected_version"]))["released"]
+    assert cli(*poll)["replayed"] is True
+    assert current()["todos"] == after["todos"]
+    rows = [json.loads(line) for line in
+            (runtime / "goals" / GOAL_ID / "runs/index.jsonl").read_text().splitlines()]
+    assert sum(row.get("classification") == "quota_monitor_poll" for row in rows) == 1
+    assert all(row.get("classification") != "quota_slot_spend" for row in rows)

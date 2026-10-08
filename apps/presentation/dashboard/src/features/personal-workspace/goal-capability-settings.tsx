@@ -17,6 +17,7 @@ import { withReportScheduleTimezone } from "./periodic-report-schedule-field";
 import { localizeCapability, localizedCapabilityFieldCopy } from "./capability-localization";
 import { orderCapabilitiesForPresentation, canEditCapability, CapabilityCatalogNavigation, CapabilityConfigurationSummary, CapabilityDetailHeader, CapabilityEditorStatus } from "./capability-workbench";
 import { GoalAutoNotifyToggle } from "./notification-settings-panel";
+import { ContentReferenceWorkbench } from "./content-reference-workbench";
 import type { PersonalWorkspaceCallbacks, WorkspaceGoalNotification } from "./personal-workspace-model";
 
 type CapabilityCatalogProps = Readonly<{
@@ -267,10 +268,10 @@ function CapabilityCatalog({ callbacks, catalog, goalId, notification, onApplied
       />
 
       <article aria-label={localizedSelected.display_name} className="personal-capability-detail" tabIndex={0}>
-        <CapabilityDetailHeader capability={selected} locale={locale}
-          source={localizedSelected.effective_configuration?.source} />
-        <CapabilityEditorStatus available={editorAvailable} t={t}
-          description={readOnlyReason} />
+        {localizedSelected.capability_id === "content_ops" ? <h2>{localizedSelected.display_name}</h2> : <CapabilityDetailHeader capability={selected} locale={locale}
+          source={localizedSelected.effective_configuration?.source} />}
+        {localizedSelected.capability_id === "content_ops" ? <ContentReferenceWorkbench key={goalId} /> : <CapabilityEditorStatus available={editorAvailable} t={t}
+          description={readOnlyReason} />}
 
         {localizedSelected.capability_id === "lark_event_inbox" ? (
           <section className="personal-capability-linked-setting">
@@ -341,10 +342,10 @@ function CapabilityCatalog({ callbacks, catalog, goalId, notification, onApplied
             </button>
           </footer>
         ) : null}
-        <CapabilityConfigurationSummary key={selected.capability_id} values={[
+        {localizedSelected.capability_id !== "content_ops" ? <CapabilityConfigurationSummary key={selected.capability_id} values={[
           { label: t("capabilities.goalValue"), value: localizedSelected.current },
           { label: t(localizedSelected.machine_current ? "capabilities.machineValue" : "capabilities.defaultValue"), value: localizedSelected.machine_current ?? localizedSelected.default },
-        ]} t={t} />
+        ]} t={t} /> : null}
       </article>
     </div>
   );

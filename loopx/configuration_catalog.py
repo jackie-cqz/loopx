@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .capabilities.configuration_ui import build_capability_configuration_catalog
+from .capabilities.content_ops.reference import reference_configuration_descriptor
 from .control_plane.agent_context import agent_context_descriptor
 from .explore_graph import explore_configuration
 from .capabilities.todo_replan_cadence.machine_defaults import default_replan_cadence_configuration
@@ -880,6 +881,7 @@ def build_goal_configuration_catalog(
             "documentation": {},
         }
     )
+    catalog["features"].append(reference_configuration_descriptor())
     overrides = machine_inheritable_goal_overrides or {}
     for feature in catalog["features"]:
         feature_id = str(feature.get("feature_id") or "")

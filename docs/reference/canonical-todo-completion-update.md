@@ -433,3 +433,28 @@ the internal crossing without converting data or rewriting receipts.
 Markdown 投影、备份读取及活跃 Host IO 保留。真实 File/SQLite CLI 和删除旧入口后的
 wheel 路径验证完成与结算恢复；本批不删除 Markdown writer/shadow，也不改变默认
 provider。代码回滚不需要转换数据或重写回执。
+
+## Monitor source-writer isolation
+
+Canonical Monitor polling also loads no Markdown line writer or source Todo
+capture producer. The legacy adapter imports those functions only for a new
+unpromoted batch; reading a pre-promotion operation receipt remains available
+without them. Monitor decisions, lease proofs and original-operation replay
+continue through the existing TypeScript batch and canonical provider owners.
+
+The same real File/SQLite CLI oracle runs with the old functions present and
+physically absent: no-change and material-change observations, provider outage
+and restoration, replay after lease release, one event and no quota spend or
+duplicate successor. Existing interrupted Markdown batch and shadow/outbox
+recovery tests remain required. This qualifies another caller boundary, not
+removal of the supported writer, historical receipt readers or backup recovery,
+and changes no provider default or existing Goal's upgrade requirement.
+
+canonical Monitor poll 同样不加载 Markdown 行写入器或旧源 Todo capture producer。
+旧适配器仅在未迁移 Goal 的新 batch 写入时导入这些函数；晋升前原操作回执的读取
+仍保留。决策、租约证明和原操作重放继续复用既有 TS batch 与 canonical provider。
+相同真实 File/SQLite CLI 检查覆盖旧函数存在／物理缺席两臂、无变化／实质变化、
+provider 失效后恢复、释放租约后的重放、一次 event、无额度消耗和重复 successor。
+未迁移 Markdown 的原子 batch、shadow/outbox 中断恢复仍须通过原反例。本批只完成
+该调用方隔离，不删除仍受支持的 writer、历史回执和备份恢复，不切换默认或强制
+已有 Goal 升级。

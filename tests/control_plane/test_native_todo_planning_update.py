@@ -255,6 +255,74 @@ def deferred_hard_lease_fixture(
 
 
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_bound_user_action_metadata_through_real_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str,
+) -> None:
+    isolate_sqlite_runtime(tmp_path, monkeypatch)
+    registry, state = fixture(tmp_path, False)
+    todos = list_goal_todos(registry_path=registry, goal_id="goal-a")["todos"]
+    target = next(todo for todo in todos if todo["todo_id"] == "todo_target")
+    target.pop("claimed_by")
+    target.update(role="user", task_class="user_action", source_section="User Todo",
+                  created_by="agent-a", bound_agent="agent-a")
+    projection = build_todo_runtime_shadow_projection(
+        goal_id="goal-a", todos=todos, handoff_mode="hard_lease",
+    )
+    initialized = initialize_canonical_authority(
+        tmp_path / "runtime", "goal-a", projection, state_path=state, provider=provider,
+    )
+    state.unlink()
+    before = records(registry)
+    args = ["--role", "user", "--text", "Reminder: disposition awaits user execution",
+            "--note", "No execution authorization", "--evidence", "Synthetic receipt",
+            "--update-operation-id", "bound-action-copy",
+            "--update-expected-provider-revision", initialized["provider_revision"]]
+    assert update(registry, *args, "--dry-run")["status"] == "planned"
+    assert not state.exists()
+    assert records(registry) == before
+    applied = update(registry, *args)
+    assert applied["status"] == "applied"
+    assert applied["source_authority"] == f"{provider}_v0"
+    after = records(registry)
+    assert after["todo_other"] == before["todo_other"]
+    assert after["todo_target"]["text"] == "Reminder: disposition awaits user execution"
+    assert after["todo_target"]["note"] == "No execution authorization"
+    assert after["todo_target"]["evidence"] == "Synthetic receipt"
+    for field in ("role", "task_class", "status", "done", "created_by", "bound_agent", "claimed_by"):
+        assert after["todo_target"].get(field) == before["todo_target"].get(field)
+    assert update(registry, *args)["status"] == "replayed"
+    update(registry, *args, "--note", "Conflicting retry", ok=False)
+    stale = update(registry, "--role", "user", "--note", "Stale writer",
+                   "--update-operation-id", "stale-action-copy",
+                   "--update-expected-provider-revision", initialized["provider_revision"], ok=False)
+    assert stale["reason_code"] == "provider_revision_mismatch"
+    for attempt in (["--agent-id", "agent-b", "--text", "Foreign writer"],
+                    ["--status", "blocked"], ["--bound-agent", "agent-b"],
+                    ["--required-capability", "shell"]):
+        update(registry, "--role", "user", *attempt, ok=False)
+    assert records(registry) == after
+    # Authoring an updated reminder must not make an execution claim possible.
+    claimed = subprocess.run([
+        sys.executable, "-m", "loopx.cli", "--format", "json", "--registry", str(registry),
+        "todo", "claim", "--goal-id", "goal-a", "--todo-id", "todo_target",
+        "--agent-id", "agent-a", "--claimed-by", "agent-a",
+    ], capture_output=True, text=True, timeout=45)
+    assert claimed.returncode == 1
+    assert json.loads(claimed.stdout)["error_code"] == "todo_not_agent"
+    inspected = subprocess.run([
+        sys.executable, "-m", "loopx.cli", "--format", "json", "--registry", str(registry),
+        "task-lease", "inspect", "--goal-id", "goal-a", "--todo-id", "todo_target",
+    ], capture_output=True, text=True, timeout=45)
+    assert inspected.returncode == 0
+    assert json.loads(inspected.stdout)["lease"] is None
+    # A fresh CAS permits recovery after the rejected stale attempt.
+    recovered = update(registry, "--role", "user", "--note", "Recovered copy",
+                       "--update-operation-id", "recovered-action-copy",
+                       "--update-expected-provider-revision", applied["provider_revision"])
+    assert recovered["status"] == "applied"
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
 def test_promoted_hard_lease_deferred_todo_resumes_through_real_cli(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str,
 ) -> None:

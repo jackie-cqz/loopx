@@ -31,14 +31,18 @@ settlement_session = settlement_fixtures.session
 def _args(*, suppress_external_sinks: bool = False) -> argparse.Namespace:
     parser, subparsers = build_cli_parser()
     project_lifecycle_refresh_state.register_refresh_state_command(
-        subparsers, add_subcommand_format,
+        subparsers, add_subcommand_format
     )
     argv = [
         "refresh-state",
-        "--goal-id", "goal-public-fixture",
-        "--agent-id", "agent-public-fixture",
-        "--classification", "validated",
-        "--format", "json",
+        "--goal-id",
+        "goal-public-fixture",
+        "--agent-id",
+        "agent-public-fixture",
+        "--classification",
+        "validated",
+        "--format",
+        "json",
     ]
     if suppress_external_sinks:
         argv.append("--suppress-external-sinks")

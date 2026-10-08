@@ -1039,6 +1039,49 @@ def test_locator_publication_failure_surfaces_safe_typed_startup_diagnostic(
         assert json.loads(lock_path.read_text()) == lock_owner
 
 
+def test_runtime_ping_survives_denied_post_publication_chmod(
+    tmp_path: Path,
+    monkeypatch,
+    request: pytest.FixtureRequest,
+) -> None:
+    runtime_dir = tmp_path / "runtime"
+    monkeypatch.setattr(effect_runtime, "_runtime_dir", lambda: runtime_dir)
+    monkeypatch.setenv("LOOPX_EFFECT_RUNTIME_IDLE_MS", "60000")
+    denied = tmp_path / "post-publication-chmod-denied"
+    preload = tmp_path / "deny-locator-chmod.mjs"
+    preload.write_text("""import fs from 'node:fs';
+import {sep} from 'node:path';
+import {syncBuiltinESMExports} from 'node:module';
+const original = fs.promises.chmod;
+fs.promises.chmod = async function(path, mode) {
+  if (String(path).startsWith(process.env.LOOPX_TEST_RUNTIME_DIR + sep) &&
+      String(path).endsWith('.json')) {
+    fs.writeFileSync(process.env.LOOPX_TEST_CHMOD_DENIED, 'denied');
+    const error = new Error('synthetic denied post-publication chmod');
+    error.code = 'EACCES';
+    throw error;
+  }
+  return original.call(this, path, mode);
+};
+syncBuiltinESMExports();
+""", encoding="utf-8")
+    monkeypatch.setenv("NODE_OPTIONS", f"--import={preload.as_uri()}")
+    monkeypatch.setenv("LOOPX_TEST_RUNTIME_DIR", str(runtime_dir))
+    monkeypatch.setenv("LOOPX_TEST_CHMOD_DENIED", str(denied))
+    request.addfinalizer(effect_runtime.restart_effect_runtime)
+
+    result = effect_runtime.effect_runtime_result(
+        "runtime.ping", {}, retry_safe=False,
+    )
+
+    info_path = effect_runtime._runtime_info_path(effect_runtime._runtime_fingerprint())
+    assert result["pid"] > 0
+    assert json.loads(info_path.read_text(encoding="utf-8"))["pid"] == result["pid"]
+    assert not denied.exists(), "the publisher should not chmod an already private locator"
+    if os.name == "posix":
+        assert info_path.stat().st_mode & 0o777 == 0o600
+
+
 def test_early_runtime_exit_surfaces_stable_startup_diagnostic(
     tmp_path: Path,
     monkeypatch,

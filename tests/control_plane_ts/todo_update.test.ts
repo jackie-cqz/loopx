@@ -10,6 +10,7 @@ import {
   TODO_DOMAIN_ITEM_SCHEMA, TODO_DOMAIN_READ_RECORD_SCHEMA, TODO_DOMAIN_RECORD_CONTRACT,
 } from "../../loopx/control_plane/coordination/coordination_state_contract.ts";
 import { executeCoordinationTodoUpdate } from "../../loopx/control_plane/coordination/todo_update.ts";
+import type {CoordinationTodoUpdateInput} from "../../loopx/control_plane/coordination/todo_update_intent.ts";
 import {configureGoalAcceptance} from "../../loopx/control_plane/goals/acceptance_authority.ts";
 import {updateLocalCoordinationTodo} from "../../loopx/control_plane/coordination/local_authority_runtime.ts";
 
@@ -250,6 +251,92 @@ async function seeded(overrides: Record<string, unknown> = {}) {
     dry_run: false, now: new Date("2026-09-05T23:00:00Z")};
   return {store, request};
 }
+
+async function boundUserAction(overrides: Record<string, unknown> = {}, leases: Record<string, unknown>[] = []) {
+  const {store, request} = await seeded({role: "user", task_class: "user_action",
+    claimed_by: null, bound_agent: "agent-a", created_by: "agent-a", ...overrides});
+  const head = await store.loadAuthority();
+  if (head.status !== "loaded") assert.fail("missing fixture");
+  await store.commitAuthority({operation_id: "hard-lease-user-action",
+    expected_provider_revision: head.provider_revision, events: [], receipts: [],
+    next_projection: {...head.head, handoff_mode: "hard_lease", leases}});
+  return {store, request: {...request, expected_role: "user", clear_fields: [],
+    patch: {text: "Corrected reminder", note: "Still awaits the user"},
+    planning_intent: {evidence: "Synthetic disposition receipt"}}};
+}
+
+test("bound user-action copy/evidence edit uses provider CAS without inventing execution authority", async () => {
+  const {store, request} = await boundUserAction();
+  const before = await store.loadAuthority();
+  if (before.status !== "loaded") assert.fail("missing fixture");
+  const edit = {...request, expected_provider_revision: before.provider_revision};
+  assert.equal((await executeCoordinationTodoUpdate(store, {...edit, dry_run: true})).status, "planned");
+  assert.deepEqual(await store.loadAuthority(), before);
+  const applied = await executeCoordinationTodoUpdate(store, edit);
+  assert.equal(applied.status, "applied", JSON.stringify(applied));
+  const after = await store.loadAuthority();
+  if (after.status !== "loaded") assert.fail("missing fixture");
+  const updated = (after.head.todos as Record<string, unknown>[])[0]!;
+  assert.equal(updated.text, "Corrected reminder");
+  assert.equal(updated.note, "Still awaits the user");
+  assert.equal(updated.evidence, "Synthetic disposition receipt");
+  assert.equal(updated.last_actor_agent_id, "agent-a");
+  for (const field of ["role", "task_class", "status", "done", "bound_agent", "created_by", "claimed_by"]) {
+    assert.equal(updated[field], (before.head.todos as Record<string, unknown>[])[0]![field]);
+  }
+  assert.deepEqual(after.head.leases, []);
+  assert.equal((await executeCoordinationTodoUpdate(store, edit)).status, "replayed");
+  assert.equal((await executeCoordinationTodoUpdate(store, {...edit, patch: {text: "Different retry"}})).reason_code,
+    "coordination_operation_identity_mismatch");
+  assert.equal((await executeCoordinationTodoUpdate(store, {...edit, operation_id: "stale-edit"})).reason_code,
+    "provider_revision_mismatch");
+  assert.deepEqual(await store.loadAuthority(), after);
+  const clear = {...request, operation_id: "clear-note-evidence", patch: {}, clear_fields: ["note"],
+    planning_intent: {evidence: null}, expected_provider_revision: after.provider_revision};
+  assert.equal((await executeCoordinationTodoUpdate(store, clear)).status, "applied");
+});
+
+test("user-action metadata exception retains actor, binding, class, lifecycle and explicit-proof fences", async () => {
+  const cases: {facts: Record<string, unknown>; input: Partial<CoordinationTodoUpdateInput>; code: string}[] = [
+    {facts: {}, input: {actor_agent_id: "agent-b"}, code: "bound_agent_mismatch"},
+    {facts: {}, input: {actor_agent_id: null}, code: "actor_not_registered"},
+    {facts: {excluded_agents: ["agent-a"]}, input: {}, code: "actor_excluded"},
+    {facts: {bound_agent: null}, input: {}, code: "handoff_mode_requires_lease"},
+    {facts: {task_class: "user_gate"}, input: {}, code: "handoff_mode_requires_lease"},
+    {facts: {role: "agent", task_class: "advancement_task", claimed_by: "agent-a"},
+      input: {expected_role: "agent"}, code: "handoff_mode_requires_lease"},
+    {facts: {status: "blocked"}, input: {}, code: "handoff_mode_requires_lease"},
+    {facts: {}, input: {planning_intent: {status: "blocked"}}, code: "handoff_mode_requires_lease"},
+    {facts: {}, input: {planning_intent: {required_capabilities: ["shell"]}}, code: "handoff_mode_requires_lease"},
+    {facts: {}, input: {planning_intent: {bound_agent: "agent-b"}}, code: "handoff_mode_requires_lease"},
+    {facts: {}, input: {lease_idempotency_key: "supplied-proof", lease_expected_version: 1}, code: "handoff_mode_requires_lease"},
+    {facts: {}, input: {lease_expected_version: 1}, code: "handoff_mode_requires_lease"},
+  ];
+  for (const {facts, input, code} of cases) {
+    const {store, request} = await boundUserAction(facts);
+    const before = await store.loadAuthority();
+    const result = await executeCoordinationTodoUpdate(store, {...request, ...input});
+    assert.equal(result.reason_code, code, JSON.stringify({facts, input, result}));
+    assert.deepEqual(await store.loadAuthority(), before);
+    assert.equal((await store.readReceipt(request.operation_id)).status, "missing");
+  }
+});
+
+test("user-action copy edits never bypass retained active, expired or released lease lineage", async () => {
+  for (const status of ["active", "expired", "released"]) {
+    for (const owner of ["agent-a", "agent-b"]) {
+      const lease = {todo_id: "todo_a", owner, status, idempotency_key: "retained-key",
+        version: 2, lease_epoch: 1, write_scopes: [], expires_at: status === "expired"
+          ? "2026-09-05T22:00:00Z" : "2026-09-06T00:00:00Z"};
+      const {store, request} = await boundUserAction({}, [lease]);
+      const before = await store.loadAuthority();
+      const result = await executeCoordinationTodoUpdate(store, request);
+      assert.equal(result.status, "failed", JSON.stringify({status, owner, result}));
+      assert.deepEqual(await store.loadAuthority(), before);
+      assert.equal((await store.readReceipt(request.operation_id)).status, "missing");
+    }
+  }
+});
 
 test("first validator binding requires explicit absence, current CAS and active lease", async () => {
   const {store, request} = await seeded();

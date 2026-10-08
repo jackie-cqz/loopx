@@ -155,6 +155,20 @@ export function todoUpdateAdmissionRejection(
     const repositoryRejection = leaseRepositoryRejection(todo, lease);
     return repositoryRejection === null ? null : reject(repositoryRejection, "Evidence association must retain the completed work repository");
   }
+  // Ordinary user actions cannot claim agent execution leases. Their exact
+  // registered bound actor may correct text/note/evidence under provider CAS
+  // without granting execution or changing lifecycle/ownership/requirements.
+  // Shared actor admission above still owns exclusions and bindings. Retained
+  // lease lineage and even a partial explicit proof keep the ordinary fence.
+  if (mode === "hard_lease" && todo.role === "user" && todo.task_class === "user_action" &&
+      todo.status === "open" && todo.claimed_by == null &&
+      input.actor_agent_id !== null && todo.bound_agent === input.actor_agent_id &&
+      input.registered_agents.includes(input.actor_agent_id) && lease === undefined &&
+      input.lease_idempotency_key == null && input.lease_expected_version == null &&
+      input.completion === undefined && input.completion_validation_revision === undefined &&
+      Object.keys(intent).every(field => field === "evidence")) {
+    return null;
+  }
   if (!delegatedUnleasedOverride && (lease !== undefined || mode === "hard_lease" ||
       input.lease_idempotency_key != null || input.lease_expected_version != null)) {
     try {

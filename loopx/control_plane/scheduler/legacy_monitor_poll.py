@@ -15,10 +15,6 @@ from typing import Any
 
 from ...agent_registry import load_goal_from_registry, registered_agent_ids_for_goal
 from ..coordination.legacy_writer_fence import legacy_todo_write_transaction
-from ..coordination.runtime_shadow_writer_adapter import (
-    begin_todo_runtime_shadow_capture, settle_todo_runtime_shadow_capture,
-    write_captured_todo_state,
-)
 from ..effect_runtime import EffectRuntimeRejected, effect_runtime_result
 from ..runtime.local_state_write_correctness import (
     build_local_state_write_correctness_dry_run_packet,
@@ -35,7 +31,6 @@ from ..todos.contract import (
 )
 from ..todos.goal_todo_projection import goal_todo_summaries
 from ..todos.handoff_mode import goal_handoff_mode
-from ..todos.line_update import upsert_todo_metadata
 from ..todos.mutation_response import serialize_added_todo_payload, serialize_todo_update_result
 from ..todos.mutation_authority import authorize_todo_lifecycle_mutation
 from ..todos.next_action_runtime import apply_added_todo_next_action
@@ -199,6 +194,8 @@ def replay_legacy_monitor_poll(
 
 def _apply_mutations(lines: list[str], mutations: list[dict[str, Any]],
                      todos: list[dict[str, Any]]) -> None:
+    from ..todos.line_update import upsert_todo_metadata
+
     sources = {todo["todo_id"]: todo for todo in todos}
     for mutation in mutations:
         record = mutation["todo"]
@@ -241,6 +238,11 @@ def apply_legacy_monitor_poll(
         if planned["replayed"]:
             verify_state_text_durable(state, original)
             return _writeback(planned)
+        from ..coordination.runtime_shadow_writer_adapter import (
+            begin_todo_runtime_shadow_capture, settle_todo_runtime_shadow_capture,
+            write_captured_todo_state,
+        )
+
         monitor = next(todo for todo in todos if todo["todo_id"] == planned["writeback"]["todo_id"])
         authority = authorize_todo_lifecycle_mutation(registry_path=registry_path, goal_id=goal_id,
             command="update", todo=monitor, actor_agent_id=request["actor_agent_id"])
