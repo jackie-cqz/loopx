@@ -2183,6 +2183,15 @@ relationship evaluation is reused before selection, and source completeness is
 preserved independently of query matching. See [semantics and rollback](../../reference/todo-work-counts.md).
 This advances T3/L5; it does not replace D2/D3 or flip a provider default.
 
+The existing typed frontier owner also classifies claimant/exclusion lanes and
+exact diagnostic floors for wait, fallback and replan readers. One Goal-context
+reduction shares fresh counts with its nested helpers, while standalone calls
+remain fresh. Python retains fact/result codecs and original row identity;
+there is no persisted cache, new packet field or changed execution authority.
+The same real File/SQLite entrypoints must qualify functional parity and the
+original full-CLI cost gate together. Fewer crossings alone do not explain a
+whole-CLI tail regression or complete writer/backup/default-provider retirement.
+
 2026-09-24: [Typed complete-source assembly and remaining delivery packages](ledger/shared-goal-authority-state-provider-v0/2026-09-24-source-capture.md) unify source construction, identity rejection and current-graph membership; L7/D2/D3 and provider defaults remain open.
 
 2026-09-24: [Leased continuation and remaining local-default packages](ledger/shared-goal-authority-state-provider-v0/2026-09-24-leased-continuation.md).

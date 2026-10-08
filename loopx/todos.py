@@ -116,10 +116,7 @@ from .control_plane.coordination.local_authority import (
     read_canonical_todos_if_promoted as read_canonical_todos_if_promoted,
 )
 from .control_plane.todos.provider_update import update_canonical_todo_if_promoted
-from .control_plane.todos.update_intent import (
-    build_canonical_update_intent,
-    canonical_update_is_supported,
-)
+from .control_plane.todos.update_intent import build_canonical_update_intent
 from .control_plane.todos.provider_create import create_canonical_todo_if_promoted
 from .control_plane.todos.path_resolution import resolve_todo_state_path
 from .control_plane.todos.provider_terminal_lifecycle import provider_first_terminal_lifecycle
@@ -960,10 +957,10 @@ def update_goal_todo(
     if clear_priority:
         planning_intent["clear_priority"] = True
     monitor_intent = todo_monitor_metadata.monitor_metadata_intent(monitor_metadata)
-    if not claim_only and (validation_revision_declaration is not None or canonical_update_is_supported(
-        text=text, note=note, intent=planning_intent,
-        monitor_metadata=monitor_metadata,
-    )):
+    # Promotion selects the authority, not Python's estimate of edit validity.
+    # The typed decoder must also reject empty/invalid edits without importing
+    # an unpromoted source writer. Unpromoted Goals retain their legacy route.
+    if not claim_only:
         canonical_edit = update_canonical_todo_if_promoted(
             registry_path=registry_path, runtime_root=shadow_runtime_root,
             goal_id=goal_id, todo_id=normalize_todo_id(todo_id) or todo_id,
