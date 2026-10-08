@@ -28,6 +28,16 @@ function assertIncludes(html, value, message) {
   if (!html.includes(value)) throw new Error(message);
 }
 
+function linksToPairedEdition(html, articleUrl, expectedUrl) {
+  return [...html.matchAll(/<a\b[^>]*\shref=["']([^"']+)["'][^>]*>/gi)].some(([, href]) => {
+    try {
+      return new URL(href, articleUrl).href === expectedUrl;
+    } catch {
+      return false;
+    }
+  });
+}
+
 function sectionIds(html) {
   return [...html.matchAll(/<section\s+id="([^"]+)"/g)].map((match) => match[1]);
 }
@@ -99,7 +109,10 @@ export async function validateBilingualBlog(blogDir) {
       assertIncludes(articleHtml, `<html lang="${locale.language}">`, `Blog article language drifted: ${slug}`);
       assertIncludes(articleHtml, "<h1>", `Blog article must contain a visible title: ${slug}`);
       assertIncludes(articleHtml, `rel="canonical" href="${locale.canonicalHref(slug)}"`, `Blog canonical URL drifted: ${slug}`);
-      assertIncludes(articleHtml, `href="${locale.counterpartHref(slug)}"`, `Blog article must link its paired edition: ${slug}`);
+      const articleUrl = locale.canonicalHref(slug);
+      const counterpartUrl = new URL(locale.counterpartHref(slug), articleUrl).href;
+      deepStrictEqual(linksToPairedEdition(articleHtml, articleUrl, counterpartUrl), true,
+        `Blog article must link its paired edition: ${slug}`);
       for (const hreflang of ["en", "zh-CN", "x-default"]) {
         assertIncludes(articleHtml, `hreflang="${hreflang}"`, `Blog article is missing ${hreflang}: ${slug}`);
       }
@@ -173,6 +186,16 @@ function fakeBlogIndex(order, { focusedSlug = null } = {}) {
 
 const modulePath = fileURLToPath(import.meta.url);
 if (process.argv[1] && resolve(process.argv[1]) === modulePath) {
+  const articleUrl = "https://loopx-project.github.io/loopx/blog/example/";
+  const counterpartUrl = "https://loopx-project.github.io/loopx/blog/zh/example/";
+  for (const href of ["../zh/example/", "../../blog/zh/example/", counterpartUrl]) {
+    deepStrictEqual(linksToPairedEdition(`<a href="${href}">中文</a>`, articleUrl, counterpartUrl), true);
+  }
+  for (const href of ["../zh/other/", "https://example.invalid/loopx/blog/zh/example/", "http://["]) {
+    deepStrictEqual(linksToPairedEdition(`<a href="${href}">中文</a>`, articleUrl, counterpartUrl), false);
+  }
+  deepStrictEqual(linksToPairedEdition(`<link href="${counterpartUrl}" rel="alternate">`, articleUrl, counterpartUrl), false);
+  deepStrictEqual(linksToPairedEdition(`<a data-href="${counterpartUrl}">中文</a>`, articleUrl, counterpartUrl), false);
   // Independent expectations for unsorted input, partial dates, ties and undated posts.
   const dates = ["2026-09", "", "2026-09-15", "2026-10-02", "2026-09-26"];
   deepStrictEqual(dates.sort(comparePublicationDates), ["2026-10-02", "2026-09-26", "2026-09-15", "2026-09", ""]);
