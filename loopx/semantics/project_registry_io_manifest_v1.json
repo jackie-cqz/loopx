@@ -175,7 +175,7 @@
     },
     {
       "site": "loopx/capabilities/change_quality/receipt.py::<module>._goal_from_registry::codec_read:load_registry#1",
-      "line": 82,
+      "line": 83,
       "column": 16,
       "kind": "codec_read",
       "api": "load_registry",
