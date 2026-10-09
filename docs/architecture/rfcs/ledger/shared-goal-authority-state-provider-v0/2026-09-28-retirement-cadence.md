@@ -484,13 +484,39 @@ consumer lag, upgrade/rollback, ten-day soak, supported runtime matrix, promotio
 a soak start; completion and applicability to this candidate need verification
 with its existing owner before authorizing any replacement run.
 
-The next bounded work isolates continuity-query, proof/codec, connection and host
-costs before choosing a repair. The root cause is unproven. Keep the original
-failed result and budgets; do not remove hole/digest/receipt verification, shorten
-the workload or rerun until green. A passing absolute head budget does not cancel
-its failed growth budget. B remains open; this single-source result neither
-establishes a release regression nor changes provider defaults or File comparison
-requirements.
+Controlled diagnosis at `9d7680a34` uses the same provider/log/codec bytes as
+`5f51559dc`, real 64 KiB FULL/WAL stores and independent 10k/100k histories.
+Three uninstrumented fresh-process trials retain the 3-head/2-receipt read mix,
+with 3,000 head samples per axis per trial. Head p95 ranges are 2.91–4.84 ms
+at 10k and 4.96–10.38 ms at 100k. They demonstrate variability, not a new formal
+pass: fixture fill omits intervening reads, history is fixed during measurement,
+and the full CLI, concurrent workload and OS-cold filesystem are not measured.
+
+Actual head-path SQL timing and query bytecode isolate a history-dependent cost:
+the continuity aggregate uses SQLite's `Count` opcode over the covering index.
+Its mean execution time grows from 0.145 to 0.837 ms; the residual head work is
+0.474 versus 0.419 ms. Separate held-connection controls retain the count growth
+while indexed extrema remain small. These are instrumented component controls,
+not additive p95 budgets or a replacement for production connections. V8 capture
+identifies `current` and `identity` as hotspots but does not resolve kernel/IO
+cost or attribute the exact original 2.059x threshold crossing. Bounded JS result
+materialization never meant constant SQLite work. The regression also checks a
+non-tail hole outside the live proof window: intact extrema/head/parent cannot
+replace continuity verification. No cached authority, proof removal, provider
+change or runtime performance fix is proposed from these observations.
+
+Keep the original failed result and budgets. A passing absolute head budget
+does not cancel its failed growth row, and that row alone does not veto a
+released default under Section 7.2's consumer-impact decision. New creation
+already defaults to canonical SQLite/`hard_lease` through #5805; changing that
+owner again is not remaining work. Reconcile existing passed installed creation,
+retry, upgrade and new-write-preserving rollback evidence by source and supported
+profile. The eleven missing rows describe this capacity report, not eleven
+missing product features or invalidation of independent recovery evidence.
+B's remaining release decision concerns the declared support profile, applicable
+sustained evidence, actual consumer regressions and unresolved recovery gaps;
+retain current File comparison and existing soak evidence instead of restarting
+all acceptance from zero.
 
 ### Contract health follows Todo authority
 

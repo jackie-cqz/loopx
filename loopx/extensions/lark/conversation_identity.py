@@ -42,9 +42,15 @@ def observe_lark_conversation_identity(*, profile: str, runner: CommandRunner,
     owner_id = str(owner.get("openId") or "")
     if not OPEN_ID_PATTERN.fullmatch(owner_id):
         raise ValueError("the selected App has no verified owner identity")
+    bot_open_id = str(bot.get("openId") or "")
+    if not OPEN_ID_PATTERN.fullmatch(bot_open_id):
+        bot_open_id = ""
     provider_ref = identity_ref(app_id)
     return {"transport_ref": profile, "provider_ref": provider_ref,
-            "operator_ref": identity_ref(provider_ref, owner_id), "verified": True, "consumer_ref": hashlib.sha256(app_id.encode("utf-8")).hexdigest()[:32], "bot_display_name": str(bot.get("appName") or "")}
+            "operator_ref": identity_ref(provider_ref, owner_id), "verified": True,
+            "consumer_ref": hashlib.sha256(app_id.encode("utf-8")).hexdigest()[:32],
+            "bot_display_name": str(bot.get("appName") or ""),
+            "bot_app_id": app_id, "bot_open_id": bot_open_id}
 
 
 def lark_private_source(*, provider_ref: str, event: Mapping[str, Any]) -> dict[str, Any]:
@@ -57,5 +63,12 @@ def lark_private_source(*, provider_ref: str, event: Mapping[str, Any]) -> dict[
     if not (re.fullmatch(r"[a-f0-9]{24}", provider_ref) and LARK_CHAT_ID_PATTERN.fullmatch(chat)
             and LARK_MESSAGE_ID_PATTERN.fullmatch(message) and OPEN_ID_PATTERN.fullmatch(sender)):
         raise ValueError("incomplete private-message provenance")
+    if event.get("chat_type") == "group":
+        root = str(event.get("root_id") or message)
+        if not LARK_MESSAGE_ID_PATTERN.fullmatch(root) or (event.get("parent_id") and not event.get("root_id")):
+            raise ValueError("group topic root is unavailable")
+        return {"source_ref": identity_ref(provider_ref, chat, root), "sender_ref": identity_ref(provider_ref, sender),
+                "private_human_message": False, "group_human_message": event.get("sender_type") == "user",
+                "group_ref": identity_ref(provider_ref, chat), "topic_ref": identity_ref(provider_ref, chat, root)}
     return {"source_ref": identity_ref(provider_ref, chat, sender), "sender_ref": identity_ref(provider_ref, sender),
             "private_human_message": event.get("chat_type") == "p2p" and event.get("sender_type") == "user"}

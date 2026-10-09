@@ -174,15 +174,16 @@ def test_export_uses_canonical_todos_and_never_returns_owner_private_continuatio
         "status": "open",
         "note": "Private deliberation",
     }
-    monkeypatch.setattr(
-        details,
-        "list_goal_todos",
-        lambda **kwargs: {
-            "ok": True,
-            "source": "canonical",
-            **({"todo": todo} if kwargs.get("todo_id") else {"todos": [todo]}),
-        },
-    )
+
+    def list_todos(**kwargs):
+        result = {"ok": True, "source": "canonical"}
+        if kwargs.get("todo_id"):
+            result["todo"] = todo
+        else:
+            result["todos"] = [todo]
+        return result
+
+    monkeypatch.setattr(details, "list_goal_todos", list_todos)
     args = SimpleNamespace(
         portfolio_goal_ids=["remote-goal"],
         manager_view="todos",
