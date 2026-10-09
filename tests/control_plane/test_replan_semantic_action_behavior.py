@@ -123,6 +123,21 @@ def _inline_explore_context_action(
     return ScriptedExecToolAction(command="cat replan-frontier.json")
 
 
+def _explore_context_action(
+    request: Mapping[str, object],
+) -> ScriptedExecToolAction:
+    channel = _latest_quota_packet(request)["interaction_contract"]["agent_channel"]
+    context = channel["work_context"]
+    assert context["complete"] is True
+    read, = [source for source in context["sources"]
+             if source["kind"] == "explore_turn_context"]
+    assert read["ordering"] == "before_work"
+    assert read["content"]["goal_id"] == "replan-semantic-action-fixture"
+    assert read["content"]["agent_id"] == "codex-replan-semantic-action"
+    return ScriptedExecToolAction(command=read["command"])
+
+
+
 def _composition_successor_action(
     request: Mapping[str, object],
 ) -> ScriptedExecToolAction:
