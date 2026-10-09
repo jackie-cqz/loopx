@@ -248,8 +248,8 @@ def test_fresh_hook_uses_one_real_provider_snapshot_for_body(tmp_path, monkeypat
 @pytest.mark.parametrize("denied_target", ["journal", "namespace"])
 def test_permission_denied_hook_is_not_empty_and_recovers(tmp_path, denied_target):
     import os
-    if os.geteuid() == 0:
-        pytest.skip("root bypasses POSIX read permission")
+    if os.name == "nt" or os.geteuid() == 0:
+        pytest.skip("mode 000 read denial needs a non-root POSIX host")
     _, runtime, registry = _write_fixture(tmp_path, required_capability="network")
     scope = ("--goal-id", GOAL_ID, "--agent-id", AGENT_ID)
     rc, written = _run_cli(registry, runtime, "semantic-preference", "agent", "remember", *scope,

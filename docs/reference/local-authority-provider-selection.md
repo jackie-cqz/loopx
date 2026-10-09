@@ -328,6 +328,91 @@ archive restore into a new identity. Do not substitute either journey's
 acceptance for this one. Once this route qualifies, an old Goal's next normal
 write requires reviewed import; installing the binary alone does not migrate it.
 
+The CLI stage uses the typed `coordination.cold_source.import` transaction
+(`loopx_cold_source_import_request_v0`). First stop affected writers through
+their owning Host and verify that their processes have exited. Inspect each
+retained task lease and release it through `task-lease release`, using its
+original owner/key and current `--expected-version`. An expired lease is still
+unsettled; stopping a process does not release its lease. Dispose of pending
+capture/outbox through its owning workflow before preparing this import.
+Then execute `backup-state` with the source state, registry, coordination
+evidence and runtime root. Lease release after a saved preview changes its
+source: make a fresh backup and reviewed preview. `--writers-stopped` records
+an operator attestation, not an automatic process stop. For example, after
+shutdown and settlement, from the registered project:
+
+```bash
+loopx --format json backup-state --project . --execute --no-automations --no-skills
+loopx --format json coordination-shadow prepare-import --goal-id GOAL --operation-id IMPORT \
+  --backup-manifest SAVED-MANIFEST.json --provider sqlite --target-handoff-mode hard_lease
+# Inspect the immutable plan at plan_path. Confirm using its exact plan_sha256.
+loopx --format json coordination-shadow apply-import --goal-id GOAL --operation-id IMPORT \
+  --plan-sha256 SAVED-SHA256 --writers-stopped --execute
+# After interruption, use the original operation and digest; do not prepare a new source.
+loopx --format json coordination-shadow recover-import --goal-id GOAL --operation-id IMPORT \
+  --plan-sha256 SAVED-SHA256 --execute
+```
+
+Prepare reads complete active and archived Todo records and preserves metadata,
+original evidence and settled lease history. The trusted Python tar adapter
+reads actual archive members, including older backups without a member list;
+the TypeScript owner verifies coverage of the coordination source bytes and
+pins both saved artifacts. A missing source path in the backup refuses import.
+Prepare may select an empty target and persist its identity and immutable plan,
+but does not fence the writer, import state or grant execution authority.
+
+Apply rechecks the original source and backup under the owning locks before
+engaging `loopx_cold_source_import_writer_fence_v0`. Missing identity, changed
+source, unsettled leases (including expired active or orphan records) and
+unresolved capture/outbox fail closed. Recovery requires that original fence,
+accepts no replacement source snapshot, and reads the original receipt without
+overwriting later canonical writes. Source bytes remain retained history; the
+import writes a separate new receipt. Recovery is not a provider rollback or a
+whole-Goal restore, and replacing the binary cannot clear the writer fence.
+
+`coordination_source_backup_verified=true` qualifies the prepared coordination
+source witness only. `complete_goal_backup_verified=false` preserves the full
+backup and original-history recovery acceptance. The packaged Goal storage
+settings use the same transaction for cold import:
+
+1. Select the Goal and open **Goal settings → Task ownership → Data storage**.
+   Choose File or SQLite and an explicit supported execution policy.
+2. Stop affected writers/Hosts, verify their exit and settle/dispose of refused
+   work through its owning workflow. The preview refuses unsettled leases,
+   including expired active records; a checkbox cannot bypass this refusal.
+3. **Back up and preview import** creates a private local archive using the
+   existing backup owner, then displays the complete active/archive inventory.
+   Preview does not import, stop a Host, settle leases or grant execution.
+   Confirm **Import reviewed Markdown source**. Apply
+   rechecks the bound original source and backup; a changed source needs a new
+   reviewed preview.
+4. After a lost response or reload, **Read original preview and current storage**
+   observes the saved operation and current store independently. Reload never
+   completes an unfinished import. Confirm again to retry the original operation;
+   do not discard its carrier while the commit is ambiguous.
+
+Only Goal/operation/digest identifiers survive in browser storage. Full plans,
+source bytes and backup paths stay local to the server. Completed receipt
+readback neither overwrites later writes nor reselects a provider.
+The operator-led POSIX stop path is exercised with actual owned Host processes
+and native unpromoted-source leases on File/SQLite: import refuses while the
+Host runs and after it exits with an active lease; native release permits
+cutover. The imported released lease retains its identity and history, and a
+restart using the old grant is rejected before the actual Host launches.
+This does not qualify automatic Host discovery/stop, pending outbox disposition,
+live model sessions or full-history restore. The
+cold-import CLI reuses the selected command dispatcher and
+the existing Goal path resolver; its File/SQLite import and original-receipt
+recovery run with `todos.py`, `bootstrap.py`, `runtime_shadow_writer_adapter.py`
+and `local_authority_shadow_outbox.py` physically absent in a disposable package.
+This proves that command's independence, not that other commands or supported
+writers can lose those files. Retained prose-write guards have live callers and
+must move to their owning boundary before their adapter is removed.
+The packaged App uses the real File/SQLite backend; App loading with those old
+modules absent remains a separate acceptance. This stage does not qualify
+supported old-writer retirement,
+release default or historical support cutoff.
+
 Deliver complete, reversible PR packages in this order:
 
 1. **Direct source import and support boundary.** Implement and qualify the

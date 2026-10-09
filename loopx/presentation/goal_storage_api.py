@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any, TYPE_CHECKING, cast
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 from ..control_plane.effect_runtime import effect_runtime_result
+from ..control_plane.coordination.local_authority_shadow_projection import source_effect_runtime_result
 
 CHAT_GOAL_STORAGE_PATH = "/api/chat/goal-storage"
 
@@ -44,6 +46,9 @@ class GoalStorageRequestMixin:
             "ok", "status", "authority_changed", "execution_authority_granted",
             "plan_sha256", "reviewed_source", "target_provider", "selected_provider",
             "current", "recovery", "reason_code",
+            "operation_id", "source_inventory", "target_handoff_mode",
+            "legacy_writer_fenced", "coordination_source_backup_verified", "complete_goal_backup_verified",
+            "cold_source",
         ) if key in result}
         payload["goal_id"] = goal_id
         if preview_id is not None:
@@ -56,9 +61,29 @@ class GoalStorageRequestMixin:
             if set(query) != {"goal_id"} or len(query["goal_id"]) != 1:
                 raise ValueError("goal_id is required exactly once")
             goal_id = query["goal_id"][0]
-            self._storage_send(self._storage_owner(goal_id, action="migration-readback"), goal_id)
+            registry, goal = self._registry_and_goal(goal_id)
         except (KeyError, TypeError, ValueError):
             self._send_error("Choose a registered Goal.", status=400, error_code="invalid_goal_storage_request")
+            return
+        try:
+            result = self._storage_owner(goal_id, action="migration-readback")
+            current = result.get("current")
+            if result.get("ok") and isinstance(current, dict) and current.get("canonical") is False:
+                from ..control_plane.coordination.local_authority_shadow_projection import source_effect_runtime_result
+                from ..control_plane.coordination.runtime_shadow import build_runtime_shadow_source_snapshot
+                from ..state_refresh import resolve_goal_state
+
+                _, _, state_path = resolve_goal_state(registry=registry, goal_id=goal_id,
+                    project_override=None, state_file_override=None)
+                projection, snapshot = build_runtime_shadow_source_snapshot(goal=goal,
+                    runtime_root=self.server.runtime_root, state_path=state_path,
+                    registry_path=self.server.registry_path, include_all_archived_todos=True)
+                result = source_effect_runtime_result("coordination.source.inspect_storage", {
+                    "schema_version": "loopx_cold_source_inspection_request_v0",
+                    "runtime_root": str(self.server.runtime_root.expanduser().absolute()),
+                    "goal_id": goal_id, "projection": projection, "source_snapshot": snapshot,
+                })
+            self._storage_send(result, goal_id)
         except Exception:  # noqa: BLE001 - local provider errors stay private.
             self._send_error("Current storage unavailable.", status=503, error_code="goal_storage_unavailable")
 
@@ -93,3 +118,59 @@ class GoalStorageRequestMixin:
             self._send_error("Invalid Goal storage request.", status=400, error_code="invalid_goal_storage_request")
         except Exception:  # noqa: BLE001 - preserve the original carrier on ambiguity.
             self._send_error("Result unavailable. Read or retry the original preview.", status=503, error_code="goal_storage_unavailable")
+
+    def _storage_import(self, *, action: str) -> None:
+        """Adapt registered source/backup IO; the shared TS owner owns cutover.
+
+        No caller filenames, overrides or client-side source summaries enter
+        the owner. Readback is read-only, including after an interrupted apply.
+        """
+        try:
+            body = self._read_json()
+            allowed = ({"goal_id", "provider", "handoff_mode"} if action == "prepare" else
+                {"goal_id", "operation_id", "plan_sha256", "writers_stopped"} if action == "apply" else
+                {"goal_id", "operation_id", "plan_sha256"})
+            if set(body) != allowed or not isinstance(body.get("goal_id"), str):
+                raise ValueError("invalid import request")
+            goal_id = body["goal_id"]
+            registry, goal = self._registry_and_goal(goal_id)
+            operation = uuid4().hex if action == "prepare" else _token(body, "operation_id", 32)
+            root = self.server.runtime_root.resolve()
+            request: dict[str, Any] = {"schema_version": "loopx_cold_source_import_request_v0",
+                "action": action, "runtime_root": str(root), "goal_id": goal_id, "operation_id": operation}
+            if action == "prepare":
+                from ..control_plane.goals.state_resolution import resolve_goal_state
+                from ..control_plane.coordination.runtime_shadow import build_runtime_shadow_source_snapshot
+                from ..control_plane.coordination.cold_source_backup import read_cold_source_backup
+                from ..state_backup import build_state_backup_plan, execute_state_backup_plan
+
+                _, project, state = resolve_goal_state(registry=registry, goal_id=goal_id,
+                    project_override=None, state_file_override=None)
+                if project is None:
+                    raise ValueError("registered project is required")
+                registry_path = Path(self.server.registry_path)
+                projection, snapshot = build_runtime_shadow_source_snapshot(goal=goal, runtime_root=root,
+                    state_path=state, registry_path=registry_path, include_all_archived_todos=True)
+                backup = execute_state_backup_plan(build_state_backup_plan(project=project, runtime_root=root,
+                    output_dir=root / "backups" / "cold-import", backup_id=operation,
+                    include_automations=False, include_skills=False, include_registry_projects=False,
+                    registry_path=registry_path))
+                request.update(projection=projection, source_snapshot=snapshot,
+                    target_provider=body["provider"], target_handoff_mode=body["handoff_mode"],
+                    source_backup=read_cold_source_backup(Path(backup["manifest_path"])))
+            else:
+                request["expected_plan_sha256"] = _token(body, "plan_sha256", 64)
+                if action == "apply":
+                    request["writers_stopped"] = body["writers_stopped"]
+            result = source_effect_runtime_result("coordination.cold_source.import", request,
+                timeout=300.0, retry_safe=False)
+            # Read the current store independently. Original intent/receipt
+            # success never certifies a later provider or hides a read failure.
+            observed = self._storage_owner(goal_id, action="migration-readback")
+            result["current"] = observed.get("current") if observed.get("ok") else None
+            self._storage_send(result, goal_id)
+        except (KeyError, TypeError, ValueError):
+            self._send_error("Invalid Goal import request.", status=400, error_code="invalid_goal_storage_request")
+        except Exception:  # noqa: BLE001 - preserve the original carrier and private IO errors.
+            self._send_error("Import result unavailable. Keep and read the original preview.",
+                status=503, error_code="goal_storage_unavailable")

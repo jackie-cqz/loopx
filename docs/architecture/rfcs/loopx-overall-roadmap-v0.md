@@ -890,6 +890,38 @@ L3 checkpoint: standalone acquisition/takeover, atomic claim admission and maint
 - **Exit:** use shared-authority Section 7.2's separate decisions for a bounded change, reversible opt-in cohort and released default. Each requires affected real CLI/backend and independent baseline/negative/recovery evidence at its own scope. Formal D2 retains applicable volume and at least ten-day evidence; a cohort need not wait for that certificate. D3 retains explicit cutover authority. This plan runs no soak or provider promotion.
 - **Rollback:** reviewed fenced export/import and schema-aware downgrade; replacing a binary cannot restore old write authority.
 
+Cold-source inventory is now an explicit read-only CLI prerequisite through the
+same TS source/lease owners. It includes unreferenced archives and retained
+leases, with full text and source-byte witnesses, before any shadow opt-in.
+Original outbox disposition is also qualified through the shipped TS effects
+with Python Todo/bootstrap/capture producers absent from a disposable receiver:
+markerless abandoned/committed recovery, receipt replay without duplicate effects,
+unchanged active leases, and refusal plus same-operation archival of ambiguous
+originals. Retain the OS-lock adapter and original history readers. This covers
+the existing disposition owner, not global Host stop, lease settlement, import
+confirmation, a canonical cutover, or permission to delete active old writers.
+The same observation discovers original capture stores/identity, management
+operation files, outbox bytes and Goal-bound rollback archives through the
+existing typed owners; present history is validated without replay or drain.
+Compact readback never replaces the witnessed historical files or proves Host
+stop. Invalid history and missing completed rollback archives refuse inspection.
+Active original outbox inspection reuses the native drain proof owner to show
+pending records and receipt-proven residue per partition without any effects.
+An unavailable disposition retains raw witnesses; inactive/interrupted capture
+still needs its original management recovery. This preview never settles the
+outbox, updates a cursor or grants cleanup/import authority.
+Expired or orphan `active` leases still require settlement; canonical selectors
+and fences prevent treating display Markdown as an old authority source.
+This observation creates no capture or import receipt and never reports import
+readiness. Goal settings now consume that same observation: current/archive
+task counts, unsettled historical leases and retained capture/outbox presence,
+with path-free readback, unavailable-source refusal and fresh retry. This is the
+inventory stage only; no import, capture activation or execution grant is exposed.
+R5/D1 and T4/C1 still need stopped writer/Host proof, original outbox disposition,
+the backup-bound reviewed target and its Goal storage frontend,
+confirmation and same-operation import/recovery. Keep the cold-import work open;
+neither this prerequisite nor archive export qualifies writer cutoff or defaults.
+
 Cold-source retention checkpoint: current-project full backup discovers its
 registered custom state and source-registry routes. Real CLI backups and inert
 independent extraction preserve complete Markdown bytes, unreferenced archived
@@ -906,6 +938,67 @@ writes→File must use the current head; historical completion never selects the
 provider. This is a bounded App companion, not full old-source/Host upgrade or
 D2/release-default qualification. Continue those original acceptance frontiers
 and retire each last caller separately.
+
+Cold-source import now has a bounded CLI/App coordination stage: complete source
+records, an immutable source/target carrier bound to actual backup member bytes,
+explicit operator shutdown attestation, revalidation before the durable writer
+fence, and original-receipt recovery through the existing File/SQLite owners.
+It refuses unresolved capture/outbox and unsettled leases, including expired
+active and orphan records, without manufacturing shadow qualification. A killed
+fenced process can resume without rereading Markdown; original-receipt replay
+preserves later canonical writes. Coordination-source backup verification
+**does not qualify complete Goal recovery**. Packaged Goal storage settings
+reuse that transaction for private backup, inventory, explicit policy/stop
+confirmation and original-operation readback. Reload is read-only, including a
+fenced but uncommitted operation; applying the original carrier requires fresh
+confirmation. File/SQLite HTTP qualification preserves later writes and refuses
+source/backup drift. The operator-led POSIX stop path now exercises actual owned
+Host processes and native source leases on File/SQLite: process exit and lease
+release remain separate, expired active leases refuse import, and the old grant
+cannot launch a Host after cutover. This proves the existing supervisor/lease
+boundary with synthetic work, not automatic Host discovery or live model use.
+Proved original Todo outbox disposition now composes with cold import on both
+File and SQLite: four interrupted-write windows retain pending-source backups,
+exact original receipts and revision-bound rollback archives. Active capture
+still refuses import after its queue drains; a fresh post-disposition backup
+binds the reviewed import. Import replay preserves later canonical writes and
+the original archived bytes with the old normal producers absent in the receiver.
+Continue ambiguous-source disposition, App loading with the old normal writer
+absent and authorized full-state reactivation in R5. The
+installed cold-import CLI uses the existing selected dispatcher and
+Goal path resolver; real File/SQLite import and original-receipt recovery pass
+with the four old normal producer modules physically absent in a disposable
+package. This qualifies that command's loading boundary, not every other CLI
+caller or removal of those modules. Keep T4 retirement on actual callers: the
+retained Python prose-write guard still serves live callers and its obligation
+must survive adapter removal. This partial stage does not retire the supported
+old writer or qualify a released default.
+Cold-import preservation checkpoint (R5/D1, T4/C1): full-state backups now
+witness each saved regular member's bytes in their existing manifests, including
+raw Markdown history, lease/receipt files, SQLite snapshots and stored
+configuration. Hashing the copied stream avoids binding a reviewed backup to a
+later source reread; failed reads retain the previous backup. Real CLI cold
+import→later canonical write→full-state backup→inert independent recovery now
+retains the complete File/SQLite head and committed journal, unreferenced archived
+requirements, stored configuration and original capture/rollback/released-lease
+bytes. Readback runs with the original project/runtime unreachable; missing
+selected-provider storage fails without replacement or File fallback. The
+pre-import backup separately retains original Markdown before later projection.
+This qualifies independent data/history recovery, not identity adoption, pending
+effect disposition or live Host reactivation. Continue those boundaries and the
+packaged App recovery journey through the existing owners. Do not retire the last
+normal Markdown writer or claim the released SQLite default from this checkpoint.
+
+The qualified shadow→canonical archive→isolated File/SQLite restore path retains
+committed dependency archives, terminal lease facts and later canonical writes.
+It does not preserve every unreferenced old-source archive or raw historical
+receipt. R5/T4 now qualifies those original bytes through full-state backup and
+inert independent readback; it still must qualify their authorized adoption
+before deleting caller chains that own live recovery. Source hashes and canonical
+archive verification alone cannot substitute for that acceptance. Supported
+backup-format and original-receipt recovery retain their
+separate upgrade boundary. See the
+[archive scope](../../reference/authority-archive.md).
 
 Reviewed source admission now rejects unsupported lease JSON filenames,
 non-regular records and linked source subtrees instead of silently omitting or

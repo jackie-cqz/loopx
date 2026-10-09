@@ -265,6 +265,7 @@ def capture_todo_archive_dependencies(todos: list[dict[str, Any]], state_text: s
 def build_runtime_shadow_source_snapshot(
     *, goal: Mapping[str, Any], runtime_root: Path, state_path: Path,
     registry_path: Path,
+    include_all_archived_todos: bool = False,
 ) -> tuple[dict[str, object], dict[str, object]]:
     """Bind the supplied Goal and every derived fact to one registry observation."""
     from ...agent_registry import registered_agent_ids_for_goal
@@ -281,6 +282,7 @@ def build_runtime_shadow_source_snapshot(
         projection, snapshot = _build_runtime_shadow_source_snapshot(
             goal=current, runtime_root=runtime_root, state_path=state_path,
             registry_path=registry_path, registry=registry,
+            include_all_archived_todos=include_all_archived_todos,
         )
         snapshot["registry_source"] = {
             **witness, "registered_agents": registered_agent_ids_for_goal(current),
@@ -334,6 +336,7 @@ def _source_lease_bytes(path: Path) -> bytes:
 def _build_runtime_shadow_source_snapshot(
     *, goal: Mapping[str, Any], runtime_root: Path, state_path: Path,
     registry_path: Path, registry: dict[str, Any],
+    include_all_archived_todos: bool = False,
 ) -> tuple[dict[str, object], dict[str, object]]:
     """Project exactly the bytes carried by one ephemeral source precondition.
 
@@ -342,7 +345,7 @@ def _build_runtime_shadow_source_snapshot(
     """
     from ...rollout_event_log import ROLLOUT_EVENT_SCHEMA_VERSION, rollout_event_log_path
     from ...paths import resolve_runtime_root
-    from ...state_refresh import resolve_goal_state
+    from ..goals.state_resolution import resolve_goal_state
     from ..goals.legacy_event_source import state_event_log_candidates
     from ..todos.active_state_todo_parser import parse_active_state_todos
     from ..todos.goal_todo_projection import todo_summaries_from_fields
@@ -383,10 +386,26 @@ def _build_runtime_shadow_source_snapshot(
         raise ShadowManagementError("legacy_todo_event_source_retired",
             "legacy_todo_event_source_retired: preserve and export legacy Todo events with a compatible older release before migration")
 
-    fields = parse_active_state_todos(state_text, goal=dict(goal), state_path=state_path, item_limit=None, rollout_events=rollout_events)
-    todos = todo_summaries_from_fields(fields=fields, source="markdown_active_state", rollout_events=rollout_events, roles=["user", "agent"], status=None,
-        todo_id=None, agent_id=None, limit=None).todos
-    todos = capture_todo_archive_dependencies(todos, state_text)
+    if include_all_archived_todos:
+        from ..todos.active_state_todo_parser import parse_todo_source
+        from ..todos.todo_summary import structured_todo_item, canonical_todo_read_record
+        active, archived, _ = parse_todo_source(state_text)
+        for item in archived:
+            if item.get("role") not in {"agent", "user"}:
+                raise ShadowManagementError("cold_source_archive_role_unproved",
+                    "Archived Todo role must be explicit; cold inspection cannot infer its owner from prose")
+        # A cold inventory reads persisted records, not attention summaries or
+        # the live graph's dependency-only archive. Reuse the full record codec
+        # for both sections, retaining their original heading and full text.
+        todos = [canonical_todo_read_record(structured_todo_item(
+            item, role=item["role"], source_section=item["source_section"],
+            archive_state=item["archive_state"], text_limit=None))
+            for item in [*active["user"], *active["agent"], *archived]]
+    else:
+        fields = parse_active_state_todos(state_text, goal=dict(goal), state_path=state_path, item_limit=None, rollout_events=rollout_events)
+        todos = todo_summaries_from_fields(fields=fields, source="markdown_active_state", rollout_events=rollout_events, roles=["user", "agent"], status=None,
+            todo_id=None, agent_id=None, limit=None).todos
+        todos = capture_todo_archive_dependencies(todos, state_text)
     leases: list[dict[str, Any]] = []
     inventory: list[dict[str, object]] = []
     for path in _source_lease_paths(runtime_root, goal_id):

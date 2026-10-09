@@ -12,6 +12,100 @@ fencing and receipt proof; Python only loads the file and transports the request
 
 ## Preview and execute
 
+### Inspect a cold old source
+
+An unpromoted Markdown Goal can be inventoried before enabling capture:
+
+```bash
+loopx --format json coordination-shadow inspect-source \
+  --goal-id example-goal > old-source-inventory.json
+```
+
+This read-only command includes all supported active and archived Todo records,
+not just archives needed by the current dependency graph. It preserves full
+archived text and supported metadata through the existing record codec. The
+source witness binds the registered Goal, state bytes, registry and every lease
+file; TS revalidates it under the existing source/maintenance locks. Retained
+leases are returned separately from current graph edges. Every `active` lease
+requires settlement, including expired leases and leases for removed Todos:
+expiry is not proof that the Host stopped. Missing archive roles, duplicate
+identities, invalid historical leases and stale sources reject the inspection.
+An existing canonical selector/document or writer fence rejects using Markdown
+as a cold import source, including when the selected provider is unavailable.
+
+`source_inventory.capture` also inventories the original management operations,
+active outbox, runtime store and identity, this Goal's retained rollback stores,
+and legacy observation directory. File witnesses use raw byte hashes; malformed
+outbox files remain visible without being drained or rewritten. Existing TS
+readers validate present active history. Their compact readback is not a copy
+of all receipts: preserve the original witnessed files. Missing or altered
+completed rollback archives, invalid history and unsafe file layouts refuse
+inspection. Interrupted management remains an unfinished original operation.
+
+For an active original capture, `capture.outbox_review` uses the existing native
+drain verifier to distinguish pending entries from residue with exact original
+receipts, independently for Todos and leases. Its partition plans include the
+original entry identities and proposed cursor/reclamation readback. `planned`
+is a read-only preview: `executed` and `execution_authority_granted` are false.
+Only a fresh drain through the original capture owner can act on those facts;
+the inventory cannot authorize deletion, replay or a new import receipt.
+Malformed files, foreign lineage, unproved markers, changed receipt bytes or
+unanchored cursors make this review `failed` with the owning reason code; raw
+file witnesses remain available and unchanged. An inactive or interrupted
+capture returns no outbox review: recover its original management operation
+first. Neither case establishes outbox reconciliation or Host stop.
+
+Original disposition does not need the old Python capture producer. The
+shipped TS drain can prove a markerless write from the locked original source:
+unchanged previous bytes settle an abandoned no-op; exact new bytes prove the
+commit, only when those byte versions differ and later entries are excluded.
+Already committed candidate receipts replay without a second effect.
+The OS-lock Host adapter remains necessary. A lease receipt neither releases
+that lease nor grants work. An ambiguous source, including A→B→A with later
+entries, remains unproved and byte-preserved. Revision-bound rollback can retain
+the complete candidate and outbox in their original management archive; retry
+reads that same operation. Archiving is not proof of settlement or import
+readiness. These paths are covered with the old producers physically absent
+from a disposable receiver, not a declaration that they can all be deleted yet.
+
+For proved original Todo writes, the disposition and cold-import paths are now
+qualified together on File and SQLite: retain a full backup of the pending
+source, drain through the original TS owner, inspect the exact original receipt,
+then use revision-bound capture rollback to retain that receipt and stop capture.
+Make a fresh full backup before the [reviewed cold import](local-authority-provider-selection.md).
+An empty queue with active capture still refuses import. The import has its own
+operation and receipt; abandoned writes remain absent, committed writes appear
+once, and retrying import after later canonical writes preserves the current
+provider state and original archived bytes. This covers four interrupted-write
+windows with the old normal producers absent from the receiver. It does not
+qualify ambiguous-source settlement, automatic Host shutdown, lease release or
+live reactivation of a restored Goal. Keep those original acceptance boundaries.
+
+In the App, open **Goal settings → Task ownership → Goal data storage** to read
+the same verified inventory. It shows task/archive and unsettled-lease counts
+and retained capture/outbox presence, without exposing source text, local paths
+or execution keys. **Read current storage** performs a fresh observation; a
+failed read clears old counts. Import is explicitly unavailable at this stage.
+There is no confirmation or migration control for an old Markdown source.
+
+Read `source_inventory.active_todo_count`, `archived_todo_count`, `capture`,
+`retained_leases` and `leases_requiring_settlement`. `import_ready`,
+`writer_stop_verified` and `outbox_reconciliation_verified` remain **false**.
+There is no `--execute` switch, writer fence, bootstrap, provider initialization,
+lease grant or capture receipt. This is a shared CLI/App inventory prerequisite,
+not the complete import journey or a Lark operation. The Goal storage owner
+still needs explicit Host/writer stop, original
+outbox reconciliation, backup, reviewed target, confirmation and same-operation
+import recovery. Existing shadow qualification below retains its original gates.
+
+Keep the JSON private: it contains full Todo text, identities and local source
+paths. It is an observation, not a complete historical backup. Preserve the
+original source and supported receipts through [configuration backup](configuration-backup.md).
+No capability setting is enabled; stopping this inspection needs no rollback.
+Delete the operator-owned JSON when it is no longer needed.
+
+### Qualified shadow promotion
+
 Use an explicitly enabled, bootstrapped and qualified runtime shadow. Its
 qualification must cover real mutations and required event classes; an empty
 shadow or a saved JSON file cannot substitute for that evidence. Fresh CLI

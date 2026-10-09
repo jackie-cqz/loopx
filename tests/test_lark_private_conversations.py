@@ -67,6 +67,13 @@ class Provider:
         elif "+chat-list" in args:
             data = {"ok": True, "data": {"chats": [{"chat_id": chat, "name": title}
                 for chat, title in [("oc_community", "Community trial"), ("oc_second", "Second trial")]]}}
+        elif "api" in args and "GET" in args:
+            path = args[args.index("GET") + 1]
+            assert path.startswith("/open-apis/im/v1/messages/")
+            message = dict(self.messages[path.rsplit("/", 1)[-1]])
+            if message.get("msg_type") == "text" and "content" in message:
+                message["body"] = {"content": json.dumps({"text": message.pop("content")})}
+            data = {"code": 0, "data": {"items": [message]}}
         elif "+messages-mget" in args:
             ref = args[args.index("--message-ids") + 1]
             message = self.messages[ref]
@@ -328,6 +335,142 @@ def test_group_provider_mention_survives_a_bot_rename_and_topic_followup(ordinar
         runtime.close()
 
 
+@pytest.mark.parametrize("is_reply", [False, True])
+def test_group_readback_accepts_null_event_fields_and_provider_enriched_thread(ordinary, is_reply):  # noqa: F811
+    _, runtime, provider, transport = connect_group(ordinary)
+    try:
+        root = provider.topic("compact-topic", "Explain this project")
+        # The CLI event projection emits null for absent fields; mget can
+        # supply the topic's thread id even when the event did not carry it.
+        root.update(root_id=None, parent_id=None, thread_id=None)
+        provider.messages[root["message_id"]]["thread_id"] = "omt_compact_topic"
+        provider.messages[root["message_id"]]["mentions"] = [{"id": "cli_notes_app", "name": "notes-app"}]
+        event = root
+        if is_reply:
+            event = provider.topic("compact-reply", "Compare its configuration", root=root["message_id"])
+            event["thread_id"] = None
+            provider.messages[event["message_id"]]["thread_id"] = "omt_compact_topic"
+        assert transport.admit("notes-app", event)["status"] == "durably_accepted"
+        finish_group_turn(runtime, transport, message=event["content"])
+        assert all(topic == root["message_id"] for _, topic, _ in provider.topic_writes)
+    finally:
+        runtime.close()
+
+
+@pytest.mark.parametrize("field,value", [("parent_id", "om_wrong_parent"), ("thread_id", "omt_wrong_thread")])
+def test_group_readback_rejects_supplied_conflicting_ancestry(ordinary, field, value):  # noqa: F811
+    store, runtime, provider, transport = connect_group(ordinary)
+    try:
+        root = provider.topic("conflicting-topic", "Explain this project")
+        event = provider.topic("conflicting-reply", "Continue", root=root["message_id"])
+        event[field] = value
+        assert transport.admit("notes-app", event)["status"] == "source_verification_failed"
+        assert not store.list_sessions() and not list(transport.root.glob("*.json"))
+        assert provider.writes == []
+    finally:
+        runtime.close()
+
+
+def test_group_reply_uses_raw_ancestry_when_display_readback_omits_it(ordinary):  # noqa: F811
+    _, runtime, provider, transport = connect_group(ordinary)
+    root = provider.topic("display-root", "Explain this project")
+    reply = provider.topic("display-reply", "Compare its configuration", root=root["message_id"])
+
+    def rendered_provider(args, cwd=None, timeout=None):
+        result = provider(args, cwd, timeout)
+        if "+messages-mget" in args:
+            payload = json.loads(result["stdout"])
+            for message in payload["data"]["items"]:
+                message = dict(message)
+                message.pop("root_id", None)
+                message.pop("parent_id", None)
+                payload["data"]["items"] = [message]
+            return {**result, "stdout": json.dumps(payload)}
+        return result
+
+    transport.runner = rendered_provider
+    try:
+        assert transport.admit("notes-app", root)["status"] == "durably_accepted"
+        first = finish_group_turn(runtime, transport, message=root["content"])
+        assert transport.admit("notes-app", reply)["status"] == "durably_accepted"
+        second = finish_group_turn(runtime, transport, message=reply["content"])
+        assert second["session_id"] == first["session_id"]
+        assert all(topic == root["message_id"] for _, topic, _ in provider.topic_writes)
+        assert len([text for _, _, text in provider.topic_writes if text == "Runtime response."]) == 2
+    finally:
+        runtime.close()
+
+
+@pytest.mark.parametrize("failure", ["unavailable", "code_error", "wrong_sender", "wrong_chat", "wrong_type", "wrong_root"])
+def test_group_raw_readback_failure_cannot_fall_back_to_display_authority(ordinary, failure):  # noqa: F811
+    store, runtime, provider, transport = connect_group(ordinary)
+    root = provider.topic("raw-root", "Explain this project")
+    reply = provider.topic("raw-reply", "Compare its configuration", root=root["message_id"])
+
+    def conflicting_provider(args, cwd=None, timeout=None):
+        result = provider(args, cwd, timeout)
+        if "api" in args and "GET" in args:
+            if failure == "unavailable":
+                return {"returncode": 1, "stdout": '{"code":999}', "stderr": ""}
+            if failure == "code_error":
+                return {**result, "stdout": json.dumps({**json.loads(result["stdout"]), "code": 999})}
+            payload = json.loads(result["stdout"])
+            message = dict(payload["data"]["items"][0])
+            message.update({"wrong_sender": {"sender": {"id": "ou_other", "sender_type": "user"}},
+                            "wrong_chat": {"chat_id": "oc_other"}, "wrong_type": {"msg_type": "image"},
+                            "wrong_root": {"root_id": "om_other_root"}}[failure])
+            payload["data"]["items"] = [message]
+            return {**result, "stdout": json.dumps(payload)}
+        return result
+
+    transport.runner = conflicting_provider
+    try:
+        assert transport.admit("notes-app", reply)["status"] == "source_verification_failed"
+        assert not store.list_sessions() and not list(transport.root.glob("*.json"))
+        assert not provider.writes and not provider.reaction_creates
+    finally:
+        runtime.close()
+
+
+@pytest.mark.parametrize("kind", ["image", "post"])
+def test_group_raw_provenance_preserves_rendered_media_and_original_topic(ordinary, kind):  # noqa: F811
+    from test_lark_private_images import image_runner
+    from test_chat_image_attachments import PNG_DATA_URL
+
+    _, runtime, provider, transport = connect_group(ordinary)
+    root = provider.topic("media-root", "Explain this project")
+    media = provider.topic("media-reply", "Inspect this diagram\n![Image](img_example)", root=root["message_id"])
+    media["message_type"] = kind
+    provider.messages[media["message_id"]]["msg_type"] = kind
+    download = image_runner(provider)
+
+    def raw_media_provider(args, cwd=None, timeout=None):
+        result = download(args, cwd, timeout)
+        if "api" in args and "GET" in args:
+            payload = json.loads(result["stdout"])
+            message = payload["data"]["items"][0]
+            if message.get("msg_type") == kind:
+                message.pop("content")
+                body = {"image_key": "img_example"} if kind == "image" else {
+                    "zh_cn": {"title": "", "content": [[{"tag": "text", "text": "Inspect this diagram"},
+                                                       {"tag": "img", "image_key": "img_example"}]]}}
+                message["body"] = {"content": json.dumps(body)}
+            return {**result, "stdout": json.dumps(payload)}
+        return result
+
+    transport.runner = raw_media_provider
+    try:
+        assert transport.admit("notes-app", root)["status"] == "durably_accepted"
+        first = finish_group_turn(runtime, transport, message=root["content"])
+        assert transport.admit("notes-app", media)["status"] == "durably_accepted"
+        second = finish_group_turn(runtime, transport, message="Inspect this diagram\n[图片 1]")
+        assert second["session_id"] == first["session_id"]
+        assert second["attachments"][0]["data_url"] == PNG_DATA_URL
+        assert all(topic == root["message_id"] for _, topic, _ in provider.topic_writes)
+    finally:
+        runtime.close()
+
+
 def test_group_status_and_recipient_commands_cannot_expose_private_sessions(ordinary):  # noqa: F811
     store, runtime, provider, transport = connect_group(ordinary)
     try:
@@ -403,6 +546,69 @@ def test_http_group_setup_observes_membership_reads_back_selection_and_rejects_w
             frozen = transport.bindings.read()
             assert request(path, {key: value for key, value in body.items() if key not in {"audience", "group_ids"}})[0] == 400
             assert transport.bindings.read() == frozen
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+        runtime.close()
+
+
+def test_http_listener_health_belongs_to_each_bound_transport(ordinary):  # noqa: F811
+    from loopx.chat_server import ChatHTTPServer, ChatRequestHandler
+    from loopx.capabilities.native_chat.transports import ChatConversationTransports
+    from test_chat_transport_composition import Transport
+
+    store, runtime, provider, lark = connect(ordinary)
+    external = Transport("external-owner")
+    composed = ChatConversationTransports(observe_default=lark.bindings.observe, transports=[external])
+    bindings = ChatConversationBindings(root=store.root, project_contexts=runtime.project_contexts,
+                                       observe=composed.observe)
+    runtime.project_contexts.conversation_bindings = bindings
+    bindings.configure(transport_ref=external.transport_ref,
+        project_ref=runtime.project_contexts.available()[0]["project_ref"], executor_endpoint_id="codex")
+    original = bindings.read()
+    server = ChatHTTPServer(("127.0.0.1", 0), ChatRequestHandler)
+    server.chat_store, server.runtime_controller, server.verbose = store, runtime, False
+    server.lark_private_conversations, server.conversation_transports = lark, composed
+    # A stale Lark row must not mask the current locally installed provider.
+    server.lark_goal_topic_runtime = SimpleNamespace(health_snapshot=lambda: {
+        "notes-app": {"status": "listening"}, "steward-app": {"status": "starting"},
+        "external-owner": {"status": "stopped"}}, close=lambda: None)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    def snapshot():
+        connection = http.client.HTTPConnection(*server.server_address, timeout=15)
+        try:
+            connection.request("GET", "/api/chat/lark/private-conversations")
+            response = connection.getresponse()
+            assert response.status == 200
+            return {row["app_ref"]: row for row in json.loads(response.read())["connections"]}
+        finally:
+            connection.close()
+
+    def unavailable():
+        raise OSError("provider credential must not be exposed")
+
+    try:
+        for state in ["starting", "listening", "retrying", "stopped", "standby", "inactive"]:
+            external.health_snapshot = lambda: {"status": state, "credential": "private-provider-data"}
+            rows = snapshot()
+            assert rows["external-owner"]["listener_status"] == state
+            assert rows["notes-app"]["listener_status"] == "listening"
+            assert rows["steward-app"]["listener_status"] == "starting"
+            assert "private-provider-data" not in json.dumps(rows)
+        for malformed in [None, [], {"status": "private-provider-data"}, {"status": []}]:
+            external.health_snapshot = lambda: malformed
+            assert snapshot()["external-owner"]["listener_status"] == "unknown"
+        external.health_snapshot = unavailable
+        assert snapshot()["external-owner"]["listener_status"] == "unknown"
+        del external.health_snapshot
+        assert snapshot()["external-owner"]["listener_status"] == "unknown"
+        del server.conversation_transports
+        server.lark_goal_topic_runtime = SimpleNamespace(health_snapshot=lambda: {}, close=lambda: None)
+        assert all(row["listener_status"] == "unknown" for row in snapshot().values())
+        assert bindings.read() == original and not store.list_sessions() and not provider.writes
     finally:
         server.shutdown()
         server.server_close()
