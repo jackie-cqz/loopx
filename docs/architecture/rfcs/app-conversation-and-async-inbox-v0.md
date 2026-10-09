@@ -160,7 +160,15 @@ project access remains writable with `host_default` filesystem scope.
 The shell environment keeps only `PATH`, disables shell profile snapshots, and
 uses a fixed minimal system search path for POSIX workspaces. This preserves native
 file commands while filtering account-configured environment overrides as well as
-inherited variables. Windows execution remains unqualified by the live probes.
+inherited variables. On macOS, the trusted host may prepend the Git binary directory
+of the standard Command Line Tools or Xcode toolchain selected by the fixed system
+`xcode-select` command and grant that toolchain read access. Every path from the
+binary through `/` must be canonical, root-owned, of the expected type and neither
+group/other-writable nor writable by the caller, including through an ACL. An unsafe
+container (including a writable `/Applications`), missing toolchain or unsupported
+selection leaves the original profile and search path intact. This adaptation does
+not enable toolchain writes, root reads, account environment or tool network access.
+Windows execution remains unqualified by the live probes.
 
 The narrowed profile also disables automatic skill catalog injection and project
 instruction discovery. The agent can read workspace-owned `AGENTS.md` and skills

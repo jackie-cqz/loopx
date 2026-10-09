@@ -370,6 +370,7 @@ export function createEffectRuntimeHandlers(
     ["goal.acceptance.inspect", lazyHandler(() => import("./goals/acceptance_authority.ts"), ({inspectLocalGoalAcceptance}) => inspectLocalGoalAcceptance)],
     ["goal.acceptance.configure", lazyHandler(() => import("./goals/acceptance_authority.ts"), ({commitLocalGoalAcceptance}) => commitLocalGoalAcceptance)],
     ["goal.acceptance.verify.commit", lazyHandler(() => import("./goals/acceptance_authority.ts"), ({commitLocalGoalAcceptanceVerification}) => commitLocalGoalAcceptanceVerification)],
+    ["goal.acceptance.lifecycle.transition", lazyHandler(() => import("./goals/acceptance_authority.ts"), ({commitLocalGoalAcceptanceLifecycleTransition}) => commitLocalGoalAcceptanceLifecycleTransition)],
     ["agent.delivery_workspace.evaluate", lazyHandler(() => import("./agents/delivery_workspace.ts"), ({evaluateDeliveryWorkspace}) => evaluateDeliveryWorkspace)],
     [
       "quota.delivery_workspace_causality.evaluate",

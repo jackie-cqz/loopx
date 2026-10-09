@@ -979,6 +979,10 @@ caller or removal of those modules. Keep T4 retirement on actual callers: the
 retained Python prose-write guard still serves live callers and its obligation
 must survive adapter removal. This partial stage does not retire the supported
 old writer or qualify a released default.
+The shared TS source check admits runtime directory aliases by physical identity,
+preserving the original snapshot and foreign-source rejection. File/SQLite HTTP
+joins alias-bound import, externally configured registry backup, later writes and original-operation recovery; a
+retargeted alias refuses before the fence. This does not change the writer cutoff.
 Cold-import preservation checkpoint (R5/D1, T4/C1): full-state backups now
 witness each saved regular member's bytes in their existing manifests, including
 raw Markdown history, lease/receipt files, SQLite snapshots and stored

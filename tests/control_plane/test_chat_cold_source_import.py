@@ -12,10 +12,18 @@ from loopx.control_plane.effect_runtime import effect_runtime_result, restart_ef
 from test_cold_source_import_cli import workspace
 
 
-@pytest.fixture
-def cold_api(tmp_path, monkeypatch):
+@pytest.fixture(params=[False, True], ids=["physical-registry", "external-registry-parent-alias"])
+def cold_api(tmp_path, monkeypatch, request):
     _, state, _, body, runtime, _, _ = workspace(tmp_path, monkeypatch)
     registry = tmp_path / "project/.loopx/registry.json"
+    if request.param:
+        # The configured registry may live outside conventional Goal folders.
+        # Only its explicit backup member can cover this observed source.
+        external = tmp_path / "project/source-registry.json"
+        registry.rename(external)
+        alias = tmp_path / "project-route"
+        alias.symlink_to(tmp_path / "project", target_is_directory=True)
+        registry = alias / "source-registry.json"
     server = ChatHTTPServer(("127.0.0.1", 0), ChatRequestHandler)
     server.runtime_root = runtime
     server.registry_path = registry
@@ -47,7 +55,7 @@ def cold_api(tmp_path, monkeypatch):
             "runtime_root": str(runtime), "goal_id": "cold", "role": None, "status": None,
             "todo_id": None, "agent_id": None, "limit": None})
 
-    yield call, read, state, body, runtime
+    yield call, read, state, body, runtime, registry
     server.shutdown()
     worker.join(5)
     server.server_close()
@@ -66,7 +74,7 @@ def carrier(plan):
 
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
 def test_cold_http_preview_reload_confirm_original_recovery(cold_api, provider):
-    call, read, state, body, runtime = cold_api
+    call, read, state, body, runtime, registry = cold_api
     original = state.read_bytes()
     assert call()[1]["current"]["canonical"] is False
     plan = prepare(call, provider)
@@ -93,7 +101,6 @@ def test_cold_http_preview_reload_confirm_original_recovery(cold_api, provider):
     assert next(row for row in rows if row["todo_id"] == "todo_current")["text"] == body
     assert next(row for row in rows if row["todo_id"] == "todo_archived")["evidence"] == "original"
     from loopx.todos import add_goal_todo
-    registry = state.parents[3] / ".loopx/registry.json"
     add_goal_todo(registry_path=registry, goal_id="cold", role="agent", text="Keep later write",
         claimed_by="agent-a", note="Original metadata")
     later = read()
@@ -108,7 +115,7 @@ def test_cold_http_preview_reload_confirm_original_recovery(cold_api, provider):
 
 
 def test_cold_http_changed_source_backup_and_untrusted_inputs(cold_api):
-    call, read, state, _, runtime = cold_api
+    call, read, state, _, runtime, _ = cold_api
     plan = prepare(call)
     saved = carrier(plan)
     assert call("apply", {**saved, "writers_stopped": True, "plan": "injected"})[0] == 400
@@ -130,3 +137,55 @@ def test_cold_http_changed_source_backup_and_untrusted_inputs(cold_api):
     assert code == 409 and refused["reason_code"] == "cold_import_backup_changed", refused
     assert call()[1]["current"]["canonical"] is False
     assert not list(runtime.rglob("writer-fence.json"))
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_registered_runtime_alias_import_preserves_original_operation(cold_api, provider):
+    call, read, state, _, runtime, registry = cold_api
+    alias = runtime.parent / "registered-runtime-alias"
+    alias.symlink_to(runtime, target_is_directory=True)
+    registered = json.loads(registry.read_text())
+    registered["common_runtime_root"] = str(alias)
+    registry.write_text(json.dumps(registered))
+    original = state.read_bytes()
+
+    assert call()[1]["current"]["canonical"] is False
+    plan = prepare(call, provider)
+    saved = carrier(plan)
+    assert call("recover", saved)[1]["status"] == "prepared"
+    assert not list(runtime.rglob("writer-fence.json"))
+    assert call("apply", {**saved, "writers_stopped": False})[0] == 409
+    code, applied = call("apply", {**saved, "writers_stopped": True})
+    assert code == 200 and applied["status"] == "applied", applied
+    assert applied["execution_authority_granted"] is False
+    assert state.read_bytes() == original
+    from loopx.todos import add_goal_todo
+    assert add_goal_todo(registry_path=registry, goal_id="cold", role="agent",
+        text="Keep the write after aliased import", claimed_by="agent-a")["added"]
+    later = read()
+    state.unlink()
+    restart_effect_runtime()
+    code, recovered = call("recover", saved)
+    assert code == 200 and recovered["status"] == "replayed", recovered
+    assert read() == later
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_registered_runtime_alias_retarget_rejects_without_import(cold_api, provider):
+    call, _, state, _, runtime, registry = cold_api
+    alias = runtime.parent / "registered-runtime-alias"
+    alias.symlink_to(runtime, target_is_directory=True)
+    registered = json.loads(registry.read_text())
+    registered["common_runtime_root"] = str(alias)
+    registry.write_text(json.dumps(registered))
+    plan = prepare(call, provider)
+    other = runtime.parent / "different-runtime"
+    other.mkdir()
+    alias.unlink()
+    alias.symlink_to(other, target_is_directory=True)
+    before = state.read_bytes()
+    code, refused = call("apply", {**carrier(plan), "writers_stopped": True})
+    assert code == 409 and refused["reason_code"] == "shadow_source_runtime_root_mismatch", refused
+    assert not list(runtime.rglob("writer-fence.json"))
+    assert not list(other.rglob("writer-fence.json"))
+    assert state.read_bytes() == before
