@@ -53,7 +53,6 @@ def test_cli_completed_todo_successor_refresh_resets_periodic_window(tmp_path: P
     registry.write_text(json.dumps({"common_runtime_root": str(runtime), "goals": [{
         "id": GOAL, "status": "active", "repo": str(project), "state_file": state.name,
         # Exercise the periodic-history window instead of the live machine default.
-        "execution_profile": {"replan_after_completed_todos": 1},
         "coordination": {"agent_model": "peer_v1", "registered_agents": [AGENT]},
         "execution_profile": {"replan_after_completed_todos": 5},
     }]}))

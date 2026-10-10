@@ -38,7 +38,7 @@ DIRECT_LOADER_ALLOWLIST = {
 # functions; another direct loader in either module must still fail.
 METADATA_READER_FUNCTIONS = {
     "loopx/capabilities/native_chat/project_context.py": {"coordination_runtime_root"},
-    "loopx/control_plane/goals/source_session_recreation.py": {"_canonical_writer_guard_path"},
+    "loopx/control_plane/goals/source_session_recreation.py": {"_canonical_runtime_root"},
 }
 
 
@@ -58,27 +58,26 @@ def _assert_metadata_reader_functions(tree: ast.Module, expected: set[str]) -> N
 
 
 def _assert_recreation_reader_is_location_only(tree: ast.Module) -> None:
-    reader = next(
-        node for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "_canonical_writer_guard_path"
-    )
+    reader = next(node for node in tree.body
+                  if isinstance(node, ast.FunctionDef) and node.name == "_canonical_runtime_root")
     calls = [node for node in ast.walk(reader) if isinstance(node, ast.Call)]
-    assert all(isinstance(node.func, (ast.Name, ast.Attribute)) for node in calls)
     assert {node.func.id for node in calls if isinstance(node.func, ast.Name)} == {
-        "load_project_registry", "resolve_runtime_root", "shadow_maintenance_lock_target",
+        "load_project_registry", "resolve_runtime_root",
     }
-    # Only normalize the observed path; no decision, transaction or write API.
-    assert all(
-        isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "runtime_root"
-        and node.func.attr == "resolve"
-        for node in calls if isinstance(node.func, ast.Attribute)
-    )
+    attributes = [node for node in calls if isinstance(node.func, ast.Attribute)]
+    assert len(attributes) == 1
+    assert attributes[0].func.attr == "resolve"
+    assert isinstance(attributes[0].func.value, ast.Call)
+    assert attributes[0].func.value.func.id == "resolve_runtime_root"
     returned = [node.value for node in ast.walk(reader) if isinstance(node, ast.Return)]
-    assert len(returned) == 1
-    assert isinstance(returned[0], ast.Call)
-    assert isinstance(returned[0].func, ast.Name)
-    assert returned[0].func.id == "shadow_maintenance_lock_target"
+    assert returned == [attributes[0]]
+    guard = next(node for node in tree.body
+                 if isinstance(node, ast.FunctionDef) and node.name == "_canonical_writer_guard_path")
+    guard_calls = [node for node in ast.walk(guard) if isinstance(node, ast.Call)]
+    assert all(isinstance(node.func, ast.Name) for node in guard_calls)
+    assert {node.func.id for node in guard_calls} == {
+        "shadow_maintenance_lock_target", "_canonical_runtime_root",
+    }
 
 
 def test_direct_project_registry_loaders_have_source_session_denial() -> None:
@@ -135,13 +134,14 @@ def test_metadata_exception_rejects_another_direct_loader() -> None:
         _assert_metadata_reader_functions(tree, METADATA_READER_FUNCTIONS[relative])
 
 
+@pytest.mark.parametrize("reader_name", ["_canonical_runtime_root", "_canonical_writer_guard_path"])
 @pytest.mark.parametrize("authority_call", ["effect_runtime_result", "mutate_project_registry"])
-def test_recreation_metadata_exception_rejects_authority_calls(authority_call: str) -> None:
+def test_recreation_metadata_exception_rejects_authority_calls(authority_call: str, reader_name: str) -> None:
     relative = "loopx/control_plane/goals/source_session_recreation.py"
     tree = ast.parse((REPO_ROOT / relative).read_text(encoding="utf-8"))
     reader = next(
         node for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "_canonical_writer_guard_path"
+        if isinstance(node, ast.FunctionDef) and node.name == reader_name
     )
     reader.body.insert(0, ast.parse(f"{authority_call}()").body[0])
     with pytest.raises(AssertionError):
