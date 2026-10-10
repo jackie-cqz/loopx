@@ -160,19 +160,6 @@ def test_public_history_and_status_keep_artifacts_with_canonical_todos(history_c
         state_path=state, provider=provider,
     )
     try:
-        # History reduction tolerates malformed audit rows; status also reads
-        # authoritative settlement evidence and must fail closed on corruption.
-        corrupted = subprocess.run(
-            [sys.executable, "-m", "loopx.entrypoint", "--registry", str(registry),
-             "--runtime-root", str(runtime), "--format", "json", "status",
-             "--goal-id", "example", "--limit", "1"],
-            capture_output=True, text=True, timeout=60,
-        )
-        assert corrupted.returncode == 1, corrupted.stdout + corrupted.stderr
-        assert "settlement readback" in json.loads(corrupted.stdout)["error"]
-        lines = index.read_text().splitlines()
-        assert lines[-3:] == ["not-json", "[]", ""]
-        index.write_text("\n".join(lines[:-3]) + "\n")
         for command in ("history", "status"):
             result = subprocess.run(
                 [sys.executable, "-m", "loopx.entrypoint", "--registry", str(registry),

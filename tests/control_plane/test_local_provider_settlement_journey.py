@@ -14,6 +14,7 @@ from pathlib import Path
 
 from canonical_authority_fixture import isolate_sqlite_runtime
 import test_quota_settlement_cli as settlement
+from test_todo_list_record_references import expand_references
 from test_quota_authority_settlement_journey import _source
 
 
@@ -41,7 +42,8 @@ def test_file_sqlite_file_retains_new_todos_results_and_settled_turn(tmp_path, m
         return json.loads(process.stdout)
 
     def listed():
-        return run("todo", "list", "--goal-id", goal)
+        result = run("todo", "list", "--goal-id", goal)
+        return expand_references(result, result)
 
     def plan(provider, name):
         path = tmp_path / f"{name}.json"
