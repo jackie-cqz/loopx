@@ -143,10 +143,10 @@ CLI_OUTPUT_BUDGET_SPECS: tuple[CliOutputBudgetSpec, ...] = (
             # Fixed-path base/head emit 21,871 JSON / 8,690 Markdown chars.
             # Keep the selected-Todo source, freshness, ordering and stop rules.
             "small": {"json": 22_000, "markdown": 9_000},
-            # Same 36-Todo / 12-run source: 35,383 -> 38,432 chars when
-            # required replan authoring is inline instead of a diagnostic read.
-            # Per-Todo growth and fixed semantic growth remain independent.
-            "crowded": {"json": 39_000, "markdown": 7_800},
+            # Same 36-Todo / 12-run source: 38,432 -> 39,101 chars with
+            # objective/evidence guidance; small and multi-agent paths unchanged.
+            # Per-Todo and fixed semantic growth are accounted for separately.
+            "crowded": {"json": 40_000, "markdown": 7_800},
             "multi_agent": {"json": 23_000, "markdown": 7_000},
         },
         max_lines={
@@ -157,10 +157,11 @@ CLI_OUTPUT_BUDGET_SPECS: tuple[CliOutputBudgetSpec, ...] = (
         scale_axis="todo_count",
         max_json_growth_chars_per_unit=300,
         # Required replan carries dense decision evidence from the full index.
-        # The required authoring adds 3,049 fixed chars / 94 lines; small and
-        # multi-agent cases stay identical. It does not grow with Todo count.
+        # Required authoring and objective/evidence advice are fixed packets.
+        # Paired crowded-minus-small growth: 19,236 -> 19,905 chars; the
+        # new advice adds 669. Small and multi-agent paths stay identical.
         # This fixed decision packet must not relax per-Todo growth or other routes.
-        max_json_fixed_semantic_growth_chars=9_000,
+        max_json_fixed_semantic_growth_chars=9_700,
     ),
     CliOutputBudgetSpec(
         surface_id="loopx_turn_plan",
@@ -195,10 +196,11 @@ CLI_OUTPUT_BUDGET_SPECS: tuple[CliOutputBudgetSpec, ...] = (
         # The complete validator-owned vision-authoring schema appears only on
         # the required-vision route. Account for that fixed semantic packet
         # separately so it does not relax the per-Todo growth budget. The
-        # matched current main/head grows 4,198 Linux / 3,475 Windows chars.
-        # Keep 35*60 = 2,100 plus 4,700 fixed characters independently of
-        # platform presentation ceilings. This budget does not grant authority.
-        max_json_fixed_semantic_growth_chars=4_700,
+        # paired crowded-minus-small growth is 6,673 -> 7,346 chars. Keep
+        # 35*60 = 2,100 as the per-Todo allowance; the advice adds 673 fixed
+        # chars, so 5,400 leaves 154 of headroom without widening per-Todo growth.
+        # This is a regression budget, not authority.
+        max_json_fixed_semantic_growth_chars=5_400,
     ),
     CliOutputBudgetSpec(
         surface_id="status",

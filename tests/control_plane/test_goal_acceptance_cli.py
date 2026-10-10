@@ -337,13 +337,16 @@ def test_bound_work_cannot_be_closed_by_editing_its_way_out_of_the_gate(
     code, refused = run(*terminal)
     assert code == 1, refused
     if escape and "--resume-when" in escape:
-        # The scheduling gate runs first. Clearing it must still leave the
-        # original acceptance binding in force for the missing artifact.
+        # Completion checks the unsatisfied dependency before artifact validation.
+        # Removing that wait must still leave the acceptance binding in force.
         assert refused["reason_code"] == "todo_dependency_pending", refused
-        code, resumed = run("todo", "update", *common, "--status", "open", "--clear-resume-when")
+        code, resumed = run(
+            "todo", "update", *common, "--status", "open", "--clear-resume-when"
+        )
         assert code == 0, resumed
         code, refused = run(*terminal)
-        assert code == 1 and refused["reason_code"] == "goal_acceptance_validation_rejected", refused
+        assert code == 1, refused
+        assert refused["reason_code"] == "goal_acceptance_validation_rejected", refused
     else:
         assert refused["reason_code"] in {
             "goal_acceptance_validation_required",

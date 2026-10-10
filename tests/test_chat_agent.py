@@ -200,7 +200,8 @@ def test_project_filesystem_scope_is_verified_on_start_resume_and_pinned_per_tur
     toolchain, _ = _system_toolchain_fixture(monkeypatch, **tool_options)
     safe_toolchain = not tool_options
     profile = "loopx_workspace_only_" + ("write" if grant == "workspace_write" else "read")
-    process = _FakeAppServerProcess(config_response={"config": {"mcp_servers": {"managed_fixture": {"command": "private-command"}}}},
+    process = _FakeAppServerProcess(config_response={"config": {
+        "features": {"apps": True}, "mcp_servers": {"managed_fixture": {"command": "private-command"}}}},
         thread_response={"thread": {"id": "thread-loopx-chat"},
         "activePermissionProfile": {"id": profile}, "runtimeWorkspaceRoots": [str(tmp_path)]})
     real_which, real_popen = chat_agent.shutil.which, chat_agent.subprocess.Popen
@@ -219,6 +220,7 @@ def test_project_filesystem_scope_is_verified_on_start_resume_and_pinned_per_tur
         resume_thread_id="thread-loopx-chat" if resume else None,
         model="synthetic-model", reasoning_effort="high",
         host_config={"skills": {"include_instructions": True}, "project_doc_max_bytes": 32768,
+                     "features": {"apps": True, "shell_tool": True},
                      "mcp_servers": {"caller_fixture": {"enabled": True}},
                      "shell_environment_policy": {"inherit": "all", "include_only": ["*"],
                                                   "set": {"PRIVATE_FIXTURE": "synthetic"}}})
@@ -237,12 +239,17 @@ def test_project_filesystem_scope_is_verified_on_start_resume_and_pinned_per_tur
         assert params["config"]["default_permissions"] == profile
         assert params["config"]["skills"]["include_instructions"] is False
         assert params["config"]["project_doc_max_bytes"] == 0
+        assert params["config"]["features"] == {"apps": False, "shell_tool": True}
         servers = dict(params["config"]["mcp_servers"])
         if public_reader:
             from loopx.extensions import public_source_reader as source_reader
             public = servers.pop("loopx_public_source_read")
             assert public["enabled"] is True and public["env_vars"] == []
             assert public["args"] == ["-I", str(Path(source_reader.__file__).resolve())]
+            assert public["enabled_tools"] == ["read_public_url", "read_public_image"]
+            assert public["tools"] == {
+                "read_public_url": {"approval_mode": "approve"},
+                "read_public_image": {"approval_mode": "approve"}}
         assert servers == {
             "managed_fixture": {"enabled": False}, "caller_fixture": {"enabled": False}}
         env = launched[0]
@@ -336,7 +343,9 @@ def test_project_git_configuration_preserves_local_config_without_account_inheri
         str(binary) if name == "codex" else real_which(name))
     monkeypatch.setattr(chat_agent.subprocess, "Popen", lambda command, *a, **kw:
         process if command[0] == str(binary) else real_popen(command, *a, **kw))
-    host_config = {"shell_environment_policy": {"set": {"FIXTURE_SETTING": "preserved"}}}
+    host_config = {"features": {"apps": True},
+                   "mcp_servers": {"private_fixture": {"enabled": True}},
+                   "shell_environment_policy": {"set": {"FIXTURE_SETTING": "preserved"}}}
     snapshot = json.loads(json.dumps(host_config))
     context = ChatProjectContexts([workspace], filesystem_scope=(
         "workspace_only" if isolated else "host_default")).available()[0]
@@ -350,6 +359,8 @@ def test_project_git_configuration_preserves_local_config_without_account_inheri
         settings = policy["set"]
         assert host_config == snapshot
         if isolated:
+            assert request["params"]["config"]["features"]["apps"] is False
+            assert request["params"]["config"]["mcp_servers"]["private_fixture"] == {"enabled": False}
             # Codex filters include_only after applying set, including on
             # resumed threads. The resulting tool environment must retain the
             # host's two public Git settings, without inheriting account state.
@@ -360,6 +371,8 @@ def test_project_git_configuration_preserves_local_config_without_account_inheri
             assert run("rev-parse", "HEAD", environment=tool_env).stdout.strip() == expected_head
             assert run("config", "--get", "fixture.origin", environment=tool_env).stdout.strip() == "workspace"
         else:
+            assert request["params"]["config"]["features"] == snapshot["features"]
+            assert request["params"]["config"]["mcp_servers"] == snapshot["mcp_servers"]
             assert settings == snapshot["shell_environment_policy"]["set"]
             assert run("rev-parse", "HEAD", environment={**control_env, **settings}).returncode != 0
     finally:
@@ -697,6 +710,52 @@ def test_structured_turn_cannot_promote_nonfinal_json_to_a_final_result(monkeypa
     monkeypatch.setattr(session, "_next_event", lambda **kw: next(upstream))
     with pytest.raises(chat_agent.CodexChatAgentError, match="structured output"):
         session.send("Return the structured result.", output_schema={"type": "object"})
+
+
+@pytest.mark.parametrize("final_phase", [None, "final_answer"])
+def test_ordinary_turn_compact_answer_uses_final_item_not_commentary(monkeypatch, tmp_path, final_phase):
+    session = chat_agent.CodexChatAgentSession(
+        process=_FakeAppServerProcess(), messages=queue.Queue(), thread_id="thread-fixture",
+        work_dir=tmp_path,
+    )
+    final_text = 'Actual answer.\n<loopx-review-json>{"message":"","proposals":[]}</loopx-review-json>'
+    final = {"type": "agentMessage", "text": final_text}
+    if final_phase is not None:
+        final["phase"] = final_phase
+    upstream = iter([
+        {"method": "item/agentMessage/delta", "params": {"delta": "I will check."}},
+        {"method": "item/completed", "params": {"item": {
+            "type": "agentMessage", "phase": "commentary", "text": "I will check."}}},
+        {"method": "item/agentMessage/delta", "params": {"delta": "Actual ans"}},
+        {"method": "item/completed", "params": {"item": final}},
+        {"method": "turn/completed", "params": {"turn": {"status": "completed"}}},
+    ])
+    monkeypatch.setattr(session, "_request", lambda *a, **kw: {"turn": {"id": "turn-fixture"}})
+    monkeypatch.setattr(session, "_next_event", lambda **kw: next(upstream))
+    events = []
+    response = session.send("Answer.", on_event=lambda kind, data: events.append((kind, data)))
+    assert response["message"] == "Actual answer."
+    assert not any(kind == "protocol.warning" for kind, _ in events)
+    assert events[-1] == ("answer.final", {"response": response})
+
+
+def test_ordinary_turn_cannot_adopt_a_commentary_envelope(monkeypatch, tmp_path):
+    session = chat_agent.CodexChatAgentSession(
+        process=_FakeAppServerProcess(), messages=queue.Queue(), thread_id="thread-fixture",
+        work_dir=tmp_path,
+    )
+    text = 'Plan.\n<loopx-review-json>{"message":"","proposals":[{"kind":"todo","text":"must not run"}]}</loopx-review-json>'
+    upstream = iter([
+        {"method": "item/agentMessage/delta", "params": {"delta": text}},
+        {"method": "item/completed", "params": {"item": {
+            "type": "agentMessage", "phase": "commentary", "text": text}}},
+        {"method": "turn/completed", "params": {"turn": {"status": "completed"}}},
+    ])
+    monkeypatch.setattr(session, "_request", lambda *a, **kw: {"turn": {"id": "turn-fixture"}})
+    monkeypatch.setattr(session, "_next_event", lambda **kw: next(upstream))
+    response = session.send("Answer.")
+    assert response["message"] == ""
+    assert response["proposals"] == []
 
 
 def test_trusted_manager_profile_reaches_app_server_and_turn_prompt(

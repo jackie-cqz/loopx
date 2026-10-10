@@ -130,6 +130,8 @@ function providerCalls(directory: string, revision: string, dryRun: boolean) {
         provider_revision: revision, cursor: "1"},
     }],
     createLocalCoordinationTodo: [
+      // Only reviewed create carries a revision; older wires must reach opening
+      // without a v2-only field that would reject the transport first.
       {...updateInput, schema_version: runtime.LOCAL_COORDINATION_TODO_CREATE_REQUEST_SCHEMA, todo: {}},
       {...updateInput, registry_source: witnessed.registry_source,
         schema_version: runtime.LOCAL_COORDINATION_TODO_CREATE_WITNESSED_REQUEST_SCHEMA, todo: {}},
