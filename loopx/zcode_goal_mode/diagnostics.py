@@ -14,6 +14,8 @@ import threading
 import time
 from typing import Any, Literal, TypedDict
 
+from loopx.extensions.process_runtime import prepare_owned_process_cleanup
+
 InterfaceStatus = Literal["advertised", "not_advertised", "unverified"]
 ProbeStatus = Literal["observed", "failed", "timeout", "unreadable", "output_limit"]
 
@@ -51,9 +53,8 @@ def _read_json(path: Path) -> dict[str, Any] | None:
 
 
 def _run_probe(command: list[str], *, extra_env: dict[str, str] | None = None) -> _ProbeReport:
-    # Metadata/help only. The reader owns pipe close and temporary-directory
-    # cleanup: closing a pipe on the caller thread can wait indefinitely for
-    # a descendant's inherited stdout handle, even after the parent has exited.
+    # Metadata/help only. Shared transport owns the complete isolated tree;
+    # the reader owns pipe close, which may otherwise wait on a descendant.
     disposable = None
     try:
         disposable = tempfile.TemporaryDirectory(prefix="loopx-zcode-doctor-", ignore_cleanup_errors=True)
@@ -64,8 +65,10 @@ def _run_probe(command: list[str], *, extra_env: dict[str, str] | None = None) -
         process = subprocess.Popen(
             command, cwd=disposable.name, env=env, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=0,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            start_new_session=os.name == "posix",
+            creationflags=(subprocess.CREATE_NO_WINDOW | 4) if os.name == "nt" else 0,
         )
+        cleanup = prepare_owned_process_cleanup(process)
     except OSError:
         if disposable is not None:
             disposable.cleanup()
@@ -85,10 +88,6 @@ def _run_probe(command: list[str], *, extra_env: dict[str, str] | None = None) -
                 size += len(chunk)
                 if size > 65536:
                     limited.set()
-                    try:
-                        process.kill()
-                    except OSError:
-                        pass
                     break
                 output.append(chunk)
         except (OSError, ValueError):
@@ -96,31 +95,41 @@ def _run_probe(command: list[str], *, extra_env: dict[str, str] | None = None) -
         finally:
             try:
                 stream.close()
-                disposable.cleanup()
             except OSError:
                 pass
 
     reader = threading.Thread(target=capture, daemon=True)
     reader.start()
+    status: ProbeStatus
+    exit_code = None
+    while True:
+        exit_code = process.poll()
+        if limited.is_set():
+            status = "output_limit"
+            break
+        if exit_code is not None and not reader.is_alive():
+            status = "unreadable" if read_failed.is_set() else "observed" if exit_code == 0 else "failed"
+            break
+        if time.monotonic() >= deadline:
+            status = "timeout"
+            break
+        limited.wait(min(.01, max(0, deadline - time.monotonic())))
     try:
-        exit_code = process.wait(timeout=max(0, deadline - time.monotonic()))
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait()
-        reader.join(timeout=max(0, deadline - time.monotonic()))
-        return {"status": "timeout", "exit_code": None, "output": ""}
-    reader.join(timeout=max(0, deadline - time.monotonic()))
+        # Ownership survives leader exit; the shared transport confirms the
+        # isolated group is no longer executable before returning a report.
+        cleanup()
+    except (OSError, RuntimeError, subprocess.TimeoutExpired):
+        status = "unreadable"
+    reader.join(timeout=1)
     if reader.is_alive():
-        return {"status": "timeout", "exit_code": exit_code, "output": ""}
-    status: ProbeStatus = (
-        "output_limit" if limited.is_set() else
-        "unreadable" if read_failed.is_set() else
-        "observed" if exit_code == 0 else "failed"
-    )
+        status = "unreadable"
+    else:
+        disposable.cleanup()
     return {
         "status": status, "exit_code": exit_code,
         "output": b"".join(output).decode("utf-8", errors="replace") if status in {"observed", "failed"} else "",
     }
+
 
 
 def _public_probe(probe: _ProbeReport) -> dict[str, Any]:

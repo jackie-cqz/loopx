@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 import os
 import signal
@@ -170,6 +170,74 @@ def terminate_process_tree(
         process.kill()
         process.wait()
 
+
+
+def prepare_owned_process_cleanup(process: subprocess.Popen[bytes]) -> Callable[[], None]:
+    """Retain diagnostic tree ownership even if its leader exits.
+
+    Windows callers must create the child suspended (CREATE_SUSPENDED) so
+    it cannot spawn descendants before assignment to the private Job Object.
+    POSIX callers must start a new session, as for terminate_process_tree.
+    """
+    if os.name != "nt":
+        return lambda: terminate_process_tree(process, 0)
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    native = ctypes.WinDLL("ntdll")
+    kernel.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+    kernel.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    kernel.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    kernel.QueryInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    native.NtResumeProcess.argtypes = [wintypes.HANDLE]
+    native.NtResumeProcess.restype = ctypes.c_long
+
+    class Accounting(ctypes.Structure):
+        _fields_ = [(name, ctypes.c_longlong) for name in ("user", "kernel", "period_user", "period_kernel")] + [
+            (name, wintypes.DWORD) for name in ("faults", "total", "active", "terminated")]
+
+    job = kernel.CreateJobObjectW(None, None)
+    if not job:
+        process.kill()
+        process.wait()
+        raise OSError("Owned process job creation failed")
+    try:
+        if not kernel.AssignProcessToJobObject(job, int(process._handle)):
+            raise OSError("Owned process job assignment failed")
+        if native.NtResumeProcess(int(process._handle)) != 0:
+            raise OSError("Owned process resume failed")
+    except BaseException:
+        process.kill()
+        process.wait()
+        kernel.CloseHandle(job)
+        raise
+    closed = False
+
+    def cleanup() -> None:
+        nonlocal closed
+        if closed:
+            return
+        try:
+            if not kernel.TerminateJobObject(job, 1):
+                raise OSError("Owned process job termination failed")
+            deadline = time.monotonic() + 1
+            while True:
+                accounting = Accounting()
+                if not kernel.QueryInformationJobObject(job, 1, ctypes.byref(accounting), ctypes.sizeof(accounting), None):
+                    raise OSError("Owned process job observation failed")
+                if accounting.active == 0:
+                    process.wait(timeout=max(.01, deadline - time.monotonic()))
+                    return
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Owned process job cleanup unconfirmed")
+                time.sleep(.01)
+        finally:
+            kernel.CloseHandle(job)
+            closed = True
+    return cleanup
 
 def run_capped_process(
     argv: Sequence[str],

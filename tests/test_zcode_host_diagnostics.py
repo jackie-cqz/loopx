@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -332,3 +334,35 @@ def test_probe_deadline_survives_descendant_inheriting_stdout(monkeypatch, capsy
     # without racing another thread that closes its pipe.
     time.sleep(max(0, 2.2 - elapsed))
     assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("mode,expected", [("timeout", "timeout"), ("output_limit", "output_limit"), ("exit_pipe", "timeout"), ("exit_closed", "observed")])
+def test_probe_reclaims_persistent_descendants_before_return(tmp_path, monkeypatch, mode, expected):
+    monkeypatch.setattr(diagnostics, "PROBE_TIMEOUT_SECONDS", .5)
+    child_script = "import time, pathlib, sys, os; p=pathlib.Path(sys.argv[1]); p.write_text(str(os.getpid())); n=0\nwhile True:\n n+=1; p.with_suffix('.pulse').write_text(str(n)); time.sleep(.01)"
+    path = tmp_path / "child.pid"
+    parent = "import subprocess,sys,time,pathlib,os; p=pathlib.Path(sys.argv[1]); c=subprocess.Popen([sys.executable,'-c',sys.argv[2],str(p)],stdout=subprocess.DEVNULL if sys.argv[3]=='exit_closed' else None,stderr=subprocess.DEVNULL if sys.argv[3]=='exit_closed' else None)\nwhile not p.exists(): time.sleep(.01)\nif sys.argv[3]=='output_limit': print('x'*70000,flush=True)\nif sys.argv[3].startswith('exit'): sys.exit(0)\ntime.sleep(30)"
+    for _ in range(2):
+        path.unlink(missing_ok=True)
+        try:
+            result = diagnostics._run_probe([sys.executable, "-c", parent, str(path), child_script, mode])
+            assert result["status"] == expected, result
+            pid = int(path.read_text())
+            if os.name == "posix":
+                snapshot = subprocess.run(["ps", "-A", "-o", "pid=", "-o", "stat="], check=True, capture_output=True, text=True).stdout
+                assert not any(int(parts[0]) == pid and not parts[1].startswith("Z") for line in snapshot.splitlines() if len(parts := line.split()) == 2)
+            else:
+                snapshot = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"], check=True, capture_output=True, text=True).stdout
+                assert f'","{pid}",' not in snapshot
+            before = path.with_suffix(".pulse").read_text()
+            time.sleep(.05)
+            assert path.with_suffix(".pulse").read_text() == before
+        finally:
+            if path.exists():
+                if os.name == "nt":
+                    subprocess.run(["taskkill", "/PID", path.read_text(), "/F"], capture_output=True)
+                else:
+                    try:
+                        os.kill(int(path.read_text()), 9)
+                    except ProcessLookupError:
+                        pass
