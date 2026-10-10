@@ -12,7 +12,7 @@ export async function guard(command: readonly string[]): Promise<void> {
     process.stdin.unpipe(child.stdin);
     child.stdout.unpipe(process.stdout);
     process.stdin.pause();
-    closing = terminateOwnedProcess(child).finally(() => { process.exitCode = 0; });
+    closing = terminateOwnedProcess(child);
     return closing;
   };
   const finish = () => { void close().then(() => process.exit(0), () => process.exit(1)); };
@@ -26,7 +26,7 @@ export async function guard(command: readonly string[]): Promise<void> {
   process.once("SIGINT", finish);
   process.once("SIGTERM", finish);
   child.once("exit", (code) => {
-    if (!closing) process.exit(code === 0 ? 0 : 1);
+    if (!closing) void close().then(() => process.exit(code === 0 ? 0 : 1), () => process.exit(1));
   });
   process.stdin.pipe(child.stdin);
   child.stdout.pipe(process.stdout);

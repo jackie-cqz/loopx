@@ -132,12 +132,16 @@ async function serve(request: NativeRequest): Promise<void> {
   let idle: ReturnType<typeof setTimeout> | undefined;
   let executionDeadline: ReturnType<typeof setTimeout> | undefined;
   const server = createServer();
-  const shutdown = async () => {
-    if (ending) return;
+  let shutdownPromise: Promise<void> | undefined;
+  const shutdown = (): Promise<void> => {
+    if (shutdownPromise) return shutdownPromise;
     ending = true;
     clearTimeout(monitor); clearTimeout(idle); clearTimeout(executionDeadline);
     server.close();
-    try { await controller?.close(); } finally { await release(); }
+    shutdownPromise = (async () => {
+      try { await controller?.close(); } finally { await release(); }
+    })();
+    return shutdownPromise;
   };
   try {
     const state = await readState(request.state_path);
@@ -150,7 +154,7 @@ async function serve(request: NativeRequest): Promise<void> {
       fileURLToPath(new URL("./guard.ts", import.meta.url)), "--", ...selected.cli_command];
     const host = new ZCodeAppServer(guardedCommand, selected.project, {
       ...process.env, ZCODE_STORAGE_DIR: storage, ZCODE_DATA_BASE_DIR: storage, ZCODE_SESSION_DB_PATH: join(storage, "sessions.db"),
-    }, {onExit: () => {void shutdown();}});
+    }, {guardian: true, onExit: () => {void shutdown();}});
     controller = new NativeGoalController(request, state, {host,
       validate: cleanupOnly => validate(selected, cleanupOnly), quota: () => quota(selected),
       persist: value => atomicState(request.state_path, value)});

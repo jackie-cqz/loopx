@@ -1,7 +1,8 @@
 /** Provider transport for ZCode's legacy NDJSON session/goal protocol. */
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, execFile, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import { promisify } from "node:util";
 import { StringDecoder } from "node:string_decoder";
 
 import { ZCodeGoalError, type NativeObservation, type ZCodeModelSelection, type ZCodeModelOption } from "./contract.ts";
@@ -21,6 +22,8 @@ export interface NativeGoalReadback {
 export interface NativeGoalReceipt extends NativeGoalReadback { started_turn: boolean }
 export interface ZCodeAppServerOptions {
   timeoutMs?: number;
+  /** The local guardian owns a separate native process group and confirms its cleanup. */
+  guardian?: boolean;
   onExit?: (exit: { code: number | null; expected: boolean }) => void;
   /** Notifications contain only method/session identity, never model output or private logs. */
   onEvent?: (event: { method: string; session_id?: string }) => void;
@@ -53,6 +56,7 @@ export class ZCodeAppServer {
   readonly options: ZCodeAppServerOptions;
   private process?: ChildProcessWithoutNullStreams;
   private closed = false;
+  private termination?: Promise<void>;
   private failure?: ZCodeProtocolError;
   private buffer = "";
   private pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
@@ -66,7 +70,7 @@ export class ZCodeAppServer {
     this.failure ??= error;
     for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(error); }
     this.pending.clear();
-    void this.terminate();
+    void this.terminate().catch(() => { /* close() retains and reports this cleanup rejection. */ });
   }
   private start(): void {
     if (this.process) return;
@@ -233,11 +237,30 @@ export class ZCodeAppServer {
     await this.pauseGoal(sessionId);
     return await this.mutate(sessionId, "clear");
   }
-  private async terminate(): Promise<void> {
-    if (this.process) await terminateOwnedProcess(this.process);
+  private terminate(): Promise<void> {
+    if (this.termination) return this.termination;
+    const child = this.process;
+    if (!child) return Promise.resolve();
+    this.termination = (async () => {
+      if (this.options.guardian) {
+        // Revocation must reach the guardian before its outer group is killed.
+        if (child.exitCode === null && child.signalCode === null) {
+          child.stdin.end();
+          if (globalThis.process.platform !== "win32") child.kill("SIGTERM");
+          try { await waitForOwnedExit(child, 3_000); }
+          catch {
+            try { await terminateOwnedProcess(child); }
+            finally { throw new ZCodeProtocolError("process_cleanup_unconfirmed"); }
+          }
+        }
+        if (child.exitCode !== 0) throw new ZCodeProtocolError("process_cleanup_unconfirmed");
+        if (globalThis.process.platform === "win32") return; // Successful guardian taskkill confirmed its native tree.
+      }
+      await terminateOwnedProcess(child);
+    })();
+    return this.termination;
   }
   async close(): Promise<void> {
-    if (this.closed) return;
     this.closed = true;
     for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(new ZCodeProtocolError("closed")); }
     this.pending.clear();
@@ -246,28 +269,57 @@ export class ZCodeAppServer {
 }
 
 
-
-
-
-
-
-
+function waitForOwnedExit(child: ChildProcessWithoutNullStreams, timeout: number): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  return new Promise((done, reject) => {
+    const exited = () => { clearTimeout(timer); done(); };
+    const timer = setTimeout(() => {
+      child.removeListener("exit", exited);
+      reject(new ZCodeProtocolError("process_cleanup_unconfirmed"));
+    }, timeout);
+    child.once("exit", exited);
+  });
+}
+const observeProcesses = promisify(execFile);
+async function ownedGroupHasExited(pid: number, timeout: number): Promise<boolean> {
+  try {
+    const { stdout } = await observeProcesses("ps", ["-A", "-o", "pgid=", "-o", "stat="], {timeout, encoding: "utf8"});
+    if (!stdout.trim()) throw new Error("Missing process observation");
+    for (const line of stdout.split("\n")) {
+      if (!line.trim()) continue;
+      const fields = line.trim().split(/\s+/);
+      if (fields.length !== 2 || !/^\d+$/.test(fields[0])) throw new Error("Invalid process observation");
+      if (Number(fields[0]) === pid && !fields[1].startsWith("Z")) return false;
+    }
+    return true;
+  } catch { throw new ZCodeProtocolError("process_cleanup_unconfirmed"); }
+}
 /** Terminate only a directly spawned child and its owned process tree. */
 export async function terminateOwnedProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
-  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+  if (!child.pid) return;
   if (globalThis.process.platform === "win32") {
-    await new Promise<void>((done) => {
-      const killer = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
-      const timer = setTimeout(() => { killer.kill(); child.kill(); done(); }, 2_000);
-      killer.once("error", () => { clearTimeout(timer); child.kill(); done(); });
-      killer.once("exit", () => { clearTimeout(timer); child.kill(); done(); });
+    // Once a Windows leader is gone, taskkill cannot prove descendant ownership.
+    if (child.exitCode !== null || child.signalCode !== null) throw new ZCodeProtocolError("process_cleanup_unconfirmed");
+    await new Promise<void>((done, reject) => {
+      const killer = spawn("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {stdio: "ignore", windowsHide: true});
+      const timer = setTimeout(() => { killer.kill(); reject(new ZCodeProtocolError("process_cleanup_unconfirmed")); }, 2_000);
+      killer.once("error", () => { clearTimeout(timer); reject(new ZCodeProtocolError("process_cleanup_unconfirmed")); });
+      killer.once("exit", code => { clearTimeout(timer); code === 0 ? done() : reject(new ZCodeProtocolError("process_cleanup_unconfirmed")); });
     });
-  } else {
-    try { globalThis.process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); }
+    await waitForOwnedExit(child, 2_000);
+    return;
   }
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  await new Promise<void>((done, reject) => {
-    const timer = setTimeout(() => { child.kill("SIGKILL"); reject(new ZCodeProtocolError("process_cleanup_unconfirmed")); }, 2_000);
-    child.once("exit", () => { clearTimeout(timer); done(); });
-  });
+  const deadline = Date.now() + 2_000;
+  // A reaped leader retains its group identity while executable descendants live.
+  if (!await ownedGroupHasExited(child.pid, 2_000)) {
+    try { globalThis.process.kill(-child.pid, "SIGKILL"); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw new ZCodeProtocolError("process_cleanup_unconfirmed");
+    }
+  }
+  await waitForOwnedExit(child, Math.max(1, deadline - Date.now()));
+  while (!await ownedGroupHasExited(child.pid, Math.max(1, deadline - Date.now()))) {
+    if (Date.now() >= deadline) throw new ZCodeProtocolError("process_cleanup_unconfirmed");
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
 }
