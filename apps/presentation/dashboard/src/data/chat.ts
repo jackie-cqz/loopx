@@ -1127,7 +1127,7 @@ export function fetchLoopXMode(sessionId: string) {
 export type DelegationInventory = {
   items: Array<{record_id: string; operation_id: string | null; agent_id?: string; todo_id?: string;
     status: string; worker_active?: boolean; recovery_required: boolean | null;
-    artifacts?: Array<{ref: string; sha256: string}>}>;
+    artifacts?: Array<{ref: string; sha256: string}>; current_use?: DelegationReadback["current_use"]}>;
   has_more: boolean; next_cursor: string | null; page_readback_complete: boolean;
 };
 export type {DelegationPreflight} from "./delegation-preflight.js";
@@ -1148,6 +1148,9 @@ export type DelegationReadback = {
   validation?: {source: "goal_acceptance" | "todo_validation"; basis_sha256: string;
     check_count: number; pinned_file_count: number; checked_at?: string;
     output_versions?: Array<{ref: string; sha256: string}>};
+  current_use?: {state: "current" | "unavailable"; checked_operation_count: number;
+    reason?: "input_unavailable" | "source_unavailable" | "source_version_changed" | "dependency_cycle" | "verification_budget_exhausted";
+    blocking_operation_id?: string; blocking_input_ref?: string; path?: string[]};
   dependencies?: DelegationDependency[]; adoptions?: DelegationAdoption[];
 };
 export function readLoopXTeamWork(sessionId: string, operationId: string) {
@@ -1179,11 +1182,12 @@ export function readManagedGoalResult(goalId: string, todoId: string) {
 }
 export type DelegationState = "unavailable" | "accepted" | "rejected" | "recovery_required"
   | "stopped" | "executing" | "validating" | "dispatched" | "unknown";
-type DelegationStateFacts = {status: string; worker_active?: boolean; recovery_required: boolean | null};
+type DelegationStateFacts = {status: string; worker_active?: boolean; recovery_required: boolean | null;
+  current_use?: DelegationReadback["current_use"]};
 // Keep inventory and selected-operation labels consistent; unknown states stay unknown.
 export function delegationState(row: DelegationStateFacts): DelegationState {
   if (row.status === "unavailable") return "unavailable";
-  if (row.status === "accepted") return "accepted";
+  if (row.status === "accepted") return row.current_use?.state === "unavailable" ? "unavailable" : "accepted";
   if (row.status === "rejected") return "rejected";
   // A recorded stop precedes recovery: only the separate stop receipt proves
   // the original execution released its Host group, so the stored status alone
@@ -1650,6 +1654,20 @@ export const capabilityConfigurationEditorSchema = z.object({
   read_only_reason: z.string().optional(),
 });
 
+export const progressReviewObservationSchema = z.object({
+  mode: z.string(), read_state: z.enum(["observed", "missing", "unavailable"]), read_error: z.string().optional(),
+  receipt_count: z.number(), rejected_receipts: z.number(), stale_receipts: z.number(),
+  contract_revision: z.string().nullable(), authority: z.literal("none"),
+  latest: z.object({status: z.string(), event_id: z.string(), evidence_id: z.string(),
+    judgments: z.object({choice: z.object({relation: z.string().nullable(), increment: z.string().nullable()}).nullable(),
+      noul: z.object({serves_acceptance: z.number().nullable(), evidence_increment: z.number().nullable(), behavior_change: z.number().nullable()}).nullable()}),
+    criterion_current: z.boolean().optional(),
+    evidence_scope: z.object({coverage: z.literal("declared_file_net_change"), files: z.array(z.string()),
+      criterion_binding: z.object({origin: z.enum(["operator_study", "goal_acceptance"]), criteria_sha256: z.string(),
+        todo_id: z.string().optional(), contract_digest: z.string().optional(), contract_revision: z.number().optional(),
+        criterion_ids: z.array(z.string()).optional()})}).optional(),
+  }).nullable(),
+});
 export const capabilityConfigurationCatalogSchema = z.object({
   schema_version: z.literal("capability_configuration_catalog_v0"),
   capabilities: z.array(z.object({
@@ -1675,6 +1693,7 @@ export const capabilityConfigurationCatalogSchema = z.object({
       effective_revision: z.string(),
     }).optional(),
     documentation: z.record(z.string(), z.unknown()).optional(),
+    observation: progressReviewObservationSchema.optional(),
     context_contribution: z.object({
       supported_phases: z.array(z.enum(["before_plan", "before_delegate", "after_delegate_result"])),
       target: z.literal("coordinator"),
