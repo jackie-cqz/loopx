@@ -25,7 +25,7 @@ Only a new empty directory or this demo's matching manifest is accepted. Prepare
 | Home Energy Buying Guide | 12 source cards, three household profiles, 27 tariff/efficiency combinations, conflicting assumptions, five-section editorial plan | Cost assumptions; publication approval |
 | Riverside Neighborhood Website | Six pages, 18-route inventory, 24 accessibility criteria, navigation/form review findings, content permissions, rollback and handoff | Content freeze; deployment approval |
 
-Each project has seven replayed completion checkpoints, five ready tasks, four blocked tasks and two deferred follow-ups. Checkpoints acquire a real hard lease and complete through the canonical Todo owner, which releases that lease atomically. Dependency notes retain predecessor IDs; deferred tasks use real `todo_done` resume conditions. Two watch-only monitors have cadence and next-due metadata. No scheduler or live Agent is started by the demo.
+Each project has seven replayed completion checkpoints, five ready tasks, four blocked tasks and two deferred follow-ups. Checkpoints complete through the canonical Todo owner in an isolated soft-claim replay; they do not acquire an execution lease. Dependency notes retain predecessor IDs; deferred tasks use real `todo_done` resume conditions. Two watch-only monitors have cadence and next-due metadata. No scheduler or live Agent is started by the demo.
 
 Switch Board/List, filter by Agent, expand completed history, inspect the owner decisions and scheduled watches. `BRIEF.md`, `working-table.csv`, `calculations.json` and `DELIVERY-PLAN.md` preserve the planning inputs and dependencies. The energy sensitivity table and event contingency are calculated when preparing the workspace.
 
