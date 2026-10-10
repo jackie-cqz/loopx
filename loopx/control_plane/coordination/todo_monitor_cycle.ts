@@ -40,7 +40,7 @@ export function monitorMutationRejection(input: {
   const reject = (code: string, reason: string) => ({code, reason});
   const {todo, lease, actor_agent_id: actor, registered_agents: registered} = input;
   const executionWait = () => {
-    const dependency = todoExecutionDependencyRejection(input.todos, String(todo.todo_id));
+    const dependency = todoExecutionDependencyRejection(input.todos, String(todo.todo_id), input.now);
     return dependency === null ? null : reject(dependency.code, dependency.reason);
   };
   if (todo.role !== "agent" || todo.task_class !== "continuous_monitor" || todo.archive_state !== "active" ||

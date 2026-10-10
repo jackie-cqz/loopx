@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from sforge.harness.agent.codex import CodexAgent
 
 from benchmark.edgebench.feedback import FEEDBACK_MODES
+from benchmark.edgebench.feedback_hook import FEEDBACK_PAYLOAD
 
 from .codex import DEFAULT_REPLAN_AFTER_TURNS, Execution, prepare_codex_home
 from .codex_offline import CodexOffline
@@ -117,8 +118,8 @@ class SForgeWorker(CodexAgent):
                 raise ValueError("replan_after_todos requires a heartbeat profile")
         if replan_after_turns is not None:
             if (type(replan_after_turns) is not int or
-                    not 1 <= replan_after_turns <= 5):
-                raise ValueError("replan_after_turns must be an integer between 1 and 5")
+                    not 1 <= replan_after_turns <= 6):
+                raise ValueError("replan_after_turns must be an integer between 1 and 6")
             if not profile.startswith("heartbeat-"):
                 raise ValueError("replan_after_turns requires a heartbeat profile")
         if (replan_after_turns is None and replan_after_todos is None
@@ -231,7 +232,8 @@ class SForgeWorker(CodexAgent):
             "explore_graph": self.profile == "heartbeat-explore",
             "explore_harness": self.profile == "heartbeat-explore",
             "feedback": self.feedback,
-            **({"feedback_delivery": "codex_hooks"} if self.feedback == "best-only" else {}),
+            **({"feedback_delivery": "codex_hooks", "feedback_payload": FEEDBACK_PAYLOAD}
+               if self.feedback == "best-only" else {}),
             **(self.runtime._replan_receipt() if self.runtime and
                self.profile.startswith("heartbeat-") else {}),
         }, indent=2))

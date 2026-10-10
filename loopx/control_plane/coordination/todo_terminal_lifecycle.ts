@@ -1208,7 +1208,7 @@ export async function executeCoordinationTodoTerminalLifecycle(
   // Supersede retires waiting work through its existing terminal owner; it is
   // not execution of the deferred Todo or proof that its prerequisite ran.
   if (input.command === "complete" && authority.outcome === "apply") {
-    const dependency = todoExecutionDependencyRejection(projection.todos, input.todo_id);
+    const dependency = todoExecutionDependencyRejection(projection.todos, input.todo_id, input.now);
     if (dependency !== null) return terminalFailure(dependency.code, dependency.reason,
       {resume_condition: dependency.condition}, "decision_rejection");
   }

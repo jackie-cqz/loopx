@@ -22,12 +22,13 @@ export function continuationExecutionAuthority(head: JsonObject, input: Executio
   if (!todo) return {allowed: false, reason_code: "todo_not_found"};
   const guard = acceptanceWorkGuard(head, input.goal_id, input.todo_id);
   if (guard !== null && !guard.allowed) return {allowed: false, reason_code: String(guard.reason_code)};
+  const now = new Date();
   const decision = evaluateCanonicalTaskLeaseProof({todo, lease: index.leases.get(input.todo_id),
     handoff_mode: String(head.handoff_mode ?? "legacy"), actor_agent_id: input.agent_id,
     registered_agents: input.registered_agents, lease_idempotency_key: input.proof?.idempotency_key ?? null,
-    lease_expected_version: input.proof?.expected_version ?? null, now: new Date()});
+    lease_expected_version: input.proof?.expected_version ?? null, now});
   if (decision.outcome !== "apply") return {allowed: false, reason_code: String(decision.code)};
-  const dependency = todoExecutionDependencyRejection(index.todos, input.todo_id);
+  const dependency = todoExecutionDependencyRejection(index.todos, input.todo_id, now);
   return dependency === null ? {allowed: true, reason_code: String(decision.code)}
     : {allowed: false, reason_code: dependency.code};
 }

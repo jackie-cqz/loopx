@@ -61,7 +61,8 @@ test("abort before start performs no invocation", async () => {
   assert.equal(result.outcome, "cancelled"); assert.equal(result.returncode, null);
 });
 
-async function delegatedCompletionWaitFixture(t: test.TestContext, ttlSeconds: number) {
+async function delegatedCompletionWaitFixture(t: test.TestContext, ttlSeconds: number,
+  waitKind: "completion" | "future_date" = "completion") {
   const root = await mkdtemp(join(tmpdir(), "loopx-host-dependency-"));
   t.after(() => rm(root, {recursive: true, force: true}));
   const goal = "goal-a", storePath = join(root, "authority");
@@ -130,13 +131,14 @@ if (mode === "renew") {
     assert.equal((await store.commitAuthority(prepareCoordinationProjectionCommit({goal_id: goal,
       operation_id: "host-initial-add-wait", expected_provider_revision: head.provider_revision,
       projection: head.head, mutations: [{kind: "todo_upsert", todo: {...todo,
-        resume_when: `todo_done:${fixture.acquisition.conflict_todo_id}`}}]}))).status, "applied");
+        resume_when: waitKind === "completion" ? `todo_done:${fixture.acquisition.conflict_todo_id}`
+          : "resume_at:2099-01-01T00:00:00Z"}}]}))).status, "applied");
   };
   return {root, store, lease, addWait, renewalResultPath};
 }
 
-test("pending canonical completion wait rejects delegated Host before spawn", async t => {
-  const {root, lease, addWait} = await delegatedCompletionWaitFixture(t, 30);
+for (const waitKind of ["completion", "future_date"] as const) test(`pending canonical ${waitKind} wait rejects delegated Host before spawn`, async t => {
+  const {root, lease, addWait} = await delegatedCompletionWaitFixture(t, 30, waitKind);
   await addWait();
   const marker = join(root, "host-started");
   let spawned = 0;

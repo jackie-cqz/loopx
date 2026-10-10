@@ -628,6 +628,17 @@ owned Host 进程、未晋升源的原生租约和 File/SQLite 验证：进程�
 完整状态重新激活继续开放；协调源备份验证不结算完整恢复。详见
 [冷源导入与支持边界](../../reference/local-authority-provider-selection.md)。
 
+仍有调用方的 prose 写入保护现归属于既有 source/fence 边界，source partition
+projector 共用同一 owner，并保留旧导入兼容。配置和直接 guard 可在两个 capture
+模块物理缺席时运行。纯 runtime-root 解析及其真实 canonical Todo、terminal
+lifecycle、acceptance、Chat 和 CLI 调用方现复用既有 paths owner；旧 capture adapter
+兼容导出同一个函数。源码与 fresh wheel 的 File/SQLite App HTTP 使用同一 oracle，
+在两个 capture 模块均存在/均物理缺席时验证导入、进程重启、原操作恢复、后续
+canonical 写入及 prose 保护。保留相对项目路由、显式 override 优先、source/maintenance
+身份、Todo/handoff 不变、JSON 类型与失败不写；历史 outbox 处置和独立数据／历史
+恢复保留下述独立资格，授权重新激活及其余 App writer 调用方继续开放，不据此
+删除受支持旧 writer 或结算发布默认资格。
+
 冷旧源保留检查点：本项目全量备份现盘点注册的自定义状态与来源 registry 路由。
 真实 CLI 冷导入→新增 canonical 写入→全量备份→独立静态解包现已串联验证
 File/SQLite 完整 head、全部 committed journal、未引用的归档要求、存储配置和原始

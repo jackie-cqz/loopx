@@ -54,6 +54,8 @@ export async function inspectTaskLease(value: unknown,
     const authority = decodeTaskLeaseAuthority({...rawAuthority, handoff_mode: "legacy",
       ...(canonical ? {todos: [], todo_projection_error: null} : {})});
     await revalidateAuthoritySources(authority.source_receipts);
+    const at = dependencies.now?.() ?? new Date();
+    if (!Number.isFinite(at.valueOf())) throw new TaskLeaseAcquireError("invalid inspection clock", "invalid_inspection_clock");
     let lease: LeaseRecord | null, todo: TodoFact | null, mode: string | null, leasePath: string | null;
     let dependency: ReturnType<typeof todoExecutionDependencyRejection> = null;
     if (canonical) {
@@ -68,7 +70,7 @@ export async function inspectTaskLease(value: unknown,
       const rawLease = index.leases.get(todoId);
       lease = rawLease ? canonicalTaskLease(rawLease, goalId, todoId) : null;
       todo = canonicalLeaseTodoFact(index.todos.get(todoId));
-      dependency = todoExecutionDependencyRejection(index.todos, todoId);
+      dependency = todoExecutionDependencyRejection(index.todos, todoId, at);
       mode = normalizeHandoffMode(loaded.head.handoff_mode);
       leasePath = null;
       evidence.provider_revision = loaded.provider_revision;
@@ -82,8 +84,6 @@ export async function inspectTaskLease(value: unknown,
         mode = null;
       }
     }
-    const at = dependencies.now?.() ?? new Date();
-    if (!Number.isFinite(at.valueOf())) throw new TaskLeaseAcquireError("invalid inspection clock", "invalid_inspection_clock");
     const timeActive = leaseIsActive(lease, at);
     const needsProjection = !canonical && input.phase === "lease_record" && timeActive;
     const ownerConstraint = !timeActive || lease === null || needsProjection ? null

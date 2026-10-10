@@ -600,7 +600,7 @@ async function executeClaimAttempt(
       {goal_acceptance_guard: acceptance}, "decision_rejection");
   }
   if (leaseRequest !== null) {
-    const dependency = todoExecutionDependencyRejection(projection.todos, input.todo_id);
+    const dependency = todoExecutionDependencyRejection(projection.todos, input.todo_id, input.now);
     if (dependency !== null) return failure(dependency.code, dependency.reason,
       {resume_condition: dependency.condition}, "decision_rejection");
   }

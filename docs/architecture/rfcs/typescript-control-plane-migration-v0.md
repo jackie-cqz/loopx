@@ -567,6 +567,18 @@ normalize to a missing value. Such observations cannot infer blocker writeback
 or discharge a follow-through obligation. The remaining Python writer predicate
 rejects that case too; no active history is rewritten.
 
+The quota work-lane reader now also enforces this boundary. A historical run's
+`classification` (or the status label derived from it) cannot select the
+`dependency_observation` lane or replace a typed follow-through obligation.
+Status compaction retains authored `progress_scope=goal|agent_lane` for its
+existing ownership consumers; those values are distinct from the local
+work-lane `dependency_observation` mode. An old run without an authored scope
+remains readable and follows ordinary advancement unless typed Todo/monitor
+facts require monitoring. Explicit local work-lane scope still works; due and
+quiet monitor gates retain their typed behavior. This deliberately corrects
+quota guidance for old labels, without rewriting run history or adding another
+Python delivery-history decision owner.
+
 Next, inventory writers still omitting material-result fields and retire obsolete
 marker/hint configuration with an explicit compatibility plan. Exact legacy
 lifecycle classification codes, history selection and unrelated cadence policies
@@ -2166,6 +2178,15 @@ real-backend and captured-source qualification, and retire Python only where its
 actual callers have moved. [Operator contract](../../reference/reviewed-coordination-promotion.md).
 
 ### Todo summary decision ownership
+
+S7 due-Monitor fairness uses this same typed planning owner: after eligibility,
+claim/profile/priority ranks remain authoritative, while due time now precedes
+display index for equally ranked timed work. Selection precedes the one-row
+transport cap; general presentation and untimed wire compatibility remain.
+Real legacy/File/SQLite CLI journeys cover successive Monitor selection, exact
+poll replay and no extra debit. Per-Turn settlement and owner cadence remain;
+this closes index-based selection starvation, not multi-duty host capacity or
+same-wake continuation. See [the caller contract](../../reference/todo-work-counts.md#due-monitor-selection-before-display-limits).
 
 Adjacent deadline correction: projected Agent/User frontier waits must compare
 UTC instants rather than ISO spelling, preserving the pre-compaction evidence

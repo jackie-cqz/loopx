@@ -831,9 +831,23 @@ def handle_todo_command(
                 payload["post_writeback_hooks"] = post_writeback_source_failure(
                     post_writeback_hooks
                 )
+    output_format = format_name or str(getattr(args, "format", None) or "markdown")
+    if (args.todo_command == "list" and payload.get("ok")
+            and not args.todo_id and not args.todo_thin and output_format == "json"):
+        try:
+            payload = effect_runtime_result(
+                "todo.context.page", {"list_payload": payload},
+                large_local_snapshot=True,
+            )
+        except Exception as exc:
+            from ..usage_ping import capture_failure
+            capture_failure(exc)
+            payload = todo_error_payload(
+                args, exc, registry_path=registry_path, runtime_root_arg=runtime_root_arg,
+            )
     print_payload(
         payload,
-        format_name or str(getattr(args, "format", None) or "markdown"),
+        output_format,
         renderer,
     )
     return 0 if payload.get("ok") else 1

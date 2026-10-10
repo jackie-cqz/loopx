@@ -113,7 +113,7 @@ export async function executeCanonicalTaskLeaseLifecycle(store: AuthorityStore, 
       if (current.status !== "loaded") throw new AuthorityStoreProtocolError("current lease authority unavailable");
       validateCoordinationTodoReadModel(current.head, input.goal_id);
       const dependency = todoExecutionDependencyRejection(
-        indexCoordinationProjection(current.head, input.goal_id).todos, input.todo_id);
+        indexCoordinationProjection(current.head, input.goal_id).todos, input.todo_id, input.now);
       return dependency === null ? result : {...failed(dependency.code, dependency.reason),
         original_receipt: result.original_receipt, resume_condition: dependency.condition};
     } catch {
@@ -156,7 +156,7 @@ export async function executeCanonicalTaskLeaseLifecycle(store: AuthorityStore, 
         ...(todo ? {todo_status: todo.status, claimed_by: todo.claimed_by ?? null, excluded_agents: excluded} : {})};
     }
     if (input.operation !== "release") {
-      const dependency = todoExecutionDependencyRejection(index.todos, input.todo_id);
+      const dependency = todoExecutionDependencyRejection(index.todos, input.todo_id, input.now);
       if (dependency !== null) return failed(dependency.code, dependency.reason);
     }
     const changed = decision.outcome === "apply";

@@ -24,7 +24,7 @@ class CappedProcessResult:
     failure_kind: str | None = None
 
 
-def _wait_for_process(process: subprocess.Popen[bytes], timeout: float) -> bool:
+def _wait_for_process(process: subprocess.Popen[bytes] | subprocess.Popen[str], timeout: float) -> bool:
     try:
         process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -76,7 +76,7 @@ def _wait_for_posix_process_group_stop(process_group_id: int) -> None:
         time.sleep(min(.01, max(0, deadline - time.monotonic())))
 
 
-def _darwin_owned_group_has_exited(process: subprocess.Popen[bytes]) -> bool:
+def _darwin_owned_group_has_exited(process: subprocess.Popen[bytes] | subprocess.Popen[str]) -> bool:
     # Darwin can report EPERM rather than ESRCH for a now-empty process group.
     # A reaped leader alone does not prove its descendants have exited.
     if sys.platform != "darwin" or process.poll() is None:
@@ -88,7 +88,7 @@ def _darwin_owned_group_has_exited(process: subprocess.Popen[bytes]) -> bool:
 
 
 def _terminate_posix_process_group(
-    process: subprocess.Popen[bytes], grace_seconds: float
+    process: subprocess.Popen[bytes] | subprocess.Popen[str], grace_seconds: float
 ) -> None:
     process_group_id = process.pid
     try:
@@ -124,7 +124,7 @@ def _terminate_posix_process_group(
 
 
 def _terminate_windows_process_tree(
-    process: subprocess.Popen[bytes], grace_seconds: float
+    process: subprocess.Popen[bytes] | subprocess.Popen[str], grace_seconds: float
 ) -> None:
     if process.poll() is not None:
         return
@@ -146,7 +146,7 @@ def _terminate_windows_process_tree(
 
 
 def terminate_process_tree(
-    process: subprocess.Popen[bytes], grace_seconds: float
+    process: subprocess.Popen[bytes] | subprocess.Popen[str], grace_seconds: float
 ) -> None:
     """Stop an owned, previously isolated process tree and reap its leader.
 

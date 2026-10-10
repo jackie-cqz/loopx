@@ -98,7 +98,7 @@ export function registerLeaseAcquisitionConformance(provider: string, factory: A
     });
   }
 
-  test(`${provider} retained acquisition receipt and renewal lose current authority after a new completion wait`, async t => {
+  for (const waitKind of ["completion", "future_date"] as const) test(`${provider} retained acquisition receipt and renewal lose current authority after a new ${waitKind} wait`, async t => {
     const {store, contender, request, fixture} = await setup(t);
     const first = await acquire(store, request);
     assert.equal(first.status, "applied");
@@ -107,9 +107,11 @@ export function registerLeaseAcquisitionConformance(provider: string, factory: A
     const head = await loaded(store);
     const todo = (head.head.todos as JsonObject[]).find(row => row.todo_id === request.todo_id)!;
     assert.equal((await store.commitAuthority(prepareCoordinationProjectionCommit({goal_id: request.goal_id,
-      expected_provider_revision: head.provider_revision, operation_id: "new-completion-wait",
+      expected_provider_revision: head.provider_revision, operation_id: `new-${waitKind}-wait`,
       projection: head.head, mutations: [{kind: "todo_upsert", todo: {...todo,
-        resume_when: `todo_done:${fixture.acquisition.conflict_todo_id}`}}]}))).status, "applied");
+        resume_when: waitKind === "completion"
+          ? `todo_done:${fixture.acquisition.conflict_todo_id}`
+          : "resume_at:2026-09-13T10:05:00.001Z"}}]}))).status, "applied");
     const waiting = await loaded(store);
     const replay = await acquire(contender, request);
     assert.equal(replay.reason_code, "todo_dependency_pending");
@@ -124,7 +126,7 @@ export function registerLeaseAcquisitionConformance(provider: string, factory: A
       ttl_seconds: null})).status, "applied");
   });
 
-  test(`${provider} continuation proof follows the current completion dependency`, async t => {
+  for (const waitKind of ["completion", "future_date"] as const) test(`${provider} continuation proof follows the current ${waitKind} wait`, async t => {
     const {store, request, fixture} = await setup(t);
     const currentRequest = {...request, now: new Date()};
     const first = await acquire(store, currentRequest);
@@ -136,9 +138,11 @@ export function registerLeaseAcquisitionConformance(provider: string, factory: A
     assert.equal(execution(before.head).allowed, true);
     const todo = (before.head.todos as JsonObject[]).find(row => row.todo_id === request.todo_id)!;
     assert.equal((await store.commitAuthority(prepareCoordinationProjectionCommit({goal_id: request.goal_id,
-      expected_provider_revision: before.provider_revision, operation_id: "continuation-add-wait",
+      expected_provider_revision: before.provider_revision, operation_id: `continuation-add-${waitKind}-wait`,
       projection: before.head, mutations: [{kind: "todo_upsert", todo: {...todo,
-        resume_when: `todo_done:${fixture.acquisition.conflict_todo_id}`}}]}))).status, "applied");
+        resume_when: waitKind === "completion"
+          ? `todo_done:${fixture.acquisition.conflict_todo_id}`
+          : "resume_at:2099-01-01T00:00:00Z"}}]}))).status, "applied");
     const waiting = await loaded(store);
     assert.deepEqual(execution(waiting.head), {allowed: false, reason_code: "todo_dependency_pending"});
   });

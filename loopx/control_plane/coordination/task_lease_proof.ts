@@ -156,7 +156,7 @@ export function todoUpdateLeaseRecovery(head: JsonObject, input: CoordinationTod
     return {...base, action: "reconcile_lease_owner",
       reason: "A leased update requires the actor to own the Todo claim. Reconcile ownership before acquiring execution authority."};
   }
-  const dependency = todoExecutionDependencyRejection(index.todos, input.todo_id);
+  const dependency = todoExecutionDependencyRejection(index.todos, input.todo_id, input.now);
   // Execution must continue to wait. If the owner has instead reviewed this
   // dependency as obsolete, expose the existing administrative lifecycle;
   // clearing it directly with an inactive execution proof is still rejected.

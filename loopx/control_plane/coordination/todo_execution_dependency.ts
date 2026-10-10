@@ -1,5 +1,5 @@
-/** Current execution admission for the existing Todo completion wait. The
- * full canonical head, including retained archived rows, is the source. */
+/** Current execution admission for completion and dated Todo waits. The full
+ * canonical head, including retained archived rows, is the source. */
 import type {JsonObject} from "../effect_program.ts";
 import {diagnoseTodoResumeCondition, evaluateTodoResumeConditions, normalizeTodoResumeWhen,
   TODO_RESUME_EVALUATION_REQUEST_SCHEMA_VERSION, TODO_RESUME_NORMALIZE_REQUEST_SCHEMA_VERSION} from "../todos/resume_condition.ts";
@@ -18,10 +18,29 @@ function completionTarget(todo: JsonObject | undefined): string | null {
 }
 
 export function todoExecutionDependencyRejection(
-  todos: ReadonlyMap<string, JsonObject>, todoId: string,
+  todos: ReadonlyMap<string, JsonObject>, todoId: string, now: Date,
 ): TodoExecutionDependencyRejection | null {
   const todo = todos.get(todoId);
-  if (typeof todo?.resume_when !== "string" || !todo.resume_when.trim().toLowerCase().startsWith("todo_done:")) return null;
+  if (typeof todo?.resume_when !== "string") return null;
+  const candidate = todo.resume_when.trim().toLowerCase();
+  if (candidate.startsWith("resume_at:")) {
+    const normalized = normalizeTodoResumeWhen({schema_version: TODO_RESUME_NORMALIZE_REQUEST_SCHEMA_VERSION,
+      resume_when: todo.resume_when});
+    if (!normalized) return {code: "todo_dependency_invalid",
+      reason: "Scheduled Todo wait is invalid", condition: {resume_when: todo.resume_when}};
+    const result = evaluateTodoResumeConditions({schema_version: TODO_RESUME_EVALUATION_REQUEST_SCHEMA_VERSION,
+      items: [todo], source_items: [], kinds: ["resume_at"], evaluated_at: now.toISOString()});
+    const condition = (result.conditions as JsonObject[])[0]?.condition as JsonObject | undefined;
+    if (!condition) return {code: "todo_dependency_invalid",
+      reason: "Scheduled Todo wait could not be evaluated", condition: {resume_when: normalized}};
+    const diagnosis = diagnoseTodoResumeCondition(condition, todoId);
+    if (diagnosis.state === "satisfied") return null;
+    return {code: diagnosis.state === "invalid" ? "todo_dependency_invalid" : "todo_dependency_pending",
+      reason: diagnosis.state === "invalid"
+        ? `Scheduled Todo wait is invalid: ${diagnosis.reason}`
+        : "Scheduled Todo wakeup has not arrived", condition};
+  }
+  if (!candidate.startsWith("todo_done:")) return null;
   const immediateTarget = completionTarget(todo);
   if (immediateTarget === null) return {code: "todo_dependency_invalid",
     reason: "Completion dependency target is invalid", condition: {resume_when: todo.resume_when}};

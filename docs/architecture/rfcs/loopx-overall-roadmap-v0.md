@@ -955,8 +955,14 @@ confirmation. File/SQLite HTTP qualification preserves later writes and refuses
 source/backup drift. The operator-led POSIX stop path now exercises actual owned
 Host processes and native source leases on File/SQLite: process exit and lease
 release remain separate, expired active leases refuse import, and the old grant
-cannot launch a Host after cutover. This proves the existing supervisor/lease
-boundary with synthetic work, not automatic Host discovery or live model use.
+cannot launch a Host after cutover. Fresh canonical acquisition advances the
+retained lease version/epoch and launches a real owned Host. Source-free original
+import replay preserves that active grant and its later native settlement;
+a stale token refuses before launch even while the same Todo has a fresh active
+lease. Process exit remains separate from lease release after cutover as well.
+This qualifies the existing POSIX supervisor/lease reactivation boundary with
+synthetic work. App startup, full-state identity adoption, automatic Host
+discovery and live model use remain separate acceptance gaps.
 Proved original Todo outbox disposition now composes with cold import on both
 File and SQLite: four interrupted-write windows retain pending-source backups,
 exact original receipts and revision-bound rollback archives. Active capture
@@ -976,9 +982,20 @@ Goal path resolver; real File/SQLite import and original-receipt recovery pass
 with the four old normal producer modules physically absent in a disposable
 package. This qualifies that command's loading boundary, not every other CLI
 caller or removal of those modules. Keep T4 retirement on actual callers: the
-retained Python prose-write guard still serves live callers and its obligation
-must survive adapter removal. This partial stage does not retire the supported
-old writer or qualify a released default.
+retained prose-write guard now belongs to the existing source/fence boundary;
+the source partition projector has one shared owner, with compatible old
+imports. Configuration and direct guard checks run without both capture modules.
+Pure runtime-root routing and its actual canonical Todo, acceptance, Chat and
+CLI callers now use the existing paths owner, with an identical compatibility
+reexport for capture callers. Source and fresh-wheel File/SQLite App HTTP import,
+process restart, original-operation recovery, later canonical writes and prose
+checks pass the same oracle with both capture modules present and physically
+absent. Source/maintenance identity, Todo/handoff invariance, JSON types,
+project-relative routing and failed-write behavior remain unchanged. Historical
+outbox disposition and independent data/history recovery retain their separate
+qualifications below; authorized reactivation and remaining App writer callers
+stay open. This stage does not retire the supported old writer or qualify a
+released default.
 The shared TS source check admits runtime directory aliases by physical identity,
 preserving the original snapshot and foreign-source rejection. File/SQLite HTTP
 joins alias-bound import, externally configured registry backup, later writes and original-operation recovery; a

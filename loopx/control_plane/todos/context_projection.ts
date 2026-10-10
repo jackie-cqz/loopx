@@ -1,6 +1,7 @@
 import type { JsonObject } from "../effect_program.ts";
 import { EffectRuntimeRequestError } from "../effect_runtime_errors.ts";
 import { requireBoolean, requireInteger, requireJsonObject } from "../runtime_decode.ts";
+import { canonicalAuthorityJson } from "../coordination/authority_store_codec.ts";
 
 // A read lens over canonical records, shared by global and Goal conversations.
 // These are existing Todo facts, not dependency evaluation or execution grants.
@@ -13,6 +14,7 @@ const CONTEXT_FIELDS = [
 
 /** Select before redaction; never convert nested scopes or booleans to prose. */
 export function projectTodoContextPage(input: JsonObject): JsonObject {
+  if (input.list_payload !== undefined) return projectTodoListPayload(input);
   if (input.detail_payload !== undefined) return projectTodoDetailPayload(input);
   if (!Array.isArray(input.records)) throw new EffectRuntimeRequestError("Todo context records must be an array");
   const records = input.records.map(value => requireJsonObject(value, "Todo context record"));
@@ -51,6 +53,58 @@ export function projectTodoContextPage(input: JsonObject): JsonObject {
   });
   return {todos, coverage: {active: active.length, included: todos.length,
     omitted: Math.max(0, active.length - todos.length)}};
+}
+
+/** Lossless CLI presentation only; the full decision read model stays intact. */
+function projectTodoListPayload(input: JsonObject): JsonObject {
+  if (Object.keys(input).some(key => key !== "list_payload")) {
+    throw new EffectRuntimeRequestError("Todo list and detail/page inputs cannot be combined");
+  }
+  const payload = requireJsonObject(input.list_payload, "Todo list payload");
+  if (payload.ok !== true || payload.command !== "list" || !Array.isArray(payload.todos)
+      || payload.todo_id_filter !== undefined || payload.thin) {
+    throw new EffectRuntimeRequestError("Todo list references require an ordinary successful inventory");
+  }
+  const records = new Map<string, string>();
+  const key = (row: JsonObject): string => JSON.stringify(canonicalAuthorityJson(row));
+  // Keep selection order, counts and source records, including ambiguous ids.
+  payload.todos.forEach((value, index) => {
+    const row = requireJsonObject(value, "Todo list record");
+    const identity = key(row);
+    if (!records.has(identity)) records.set(identity, `#/todos/${index}`);
+  });
+  const result: JsonObject = {...payload};
+  let replaced = 0;
+  for (const role of ["user_todos", "agent_todos"]) {
+    if (payload[role] === undefined) continue;
+    const summary = requireJsonObject(payload[role], "Todo role summary");
+    result[role] = Object.fromEntries(Object.entries(summary).map(([lane, values]) => {
+      if (!Array.isArray(values)) return [lane, values];
+      const pointer = lane.replace(/~/g, "~0").replace(/\//g, "~1");
+      return [lane, values.map((value, index) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)
+            || typeof (value as JsonObject).todo_id !== "string") return value;
+        const row = value as JsonObject;
+        const identity = key(row);
+        const reference = records.get(identity);
+        if (reference !== undefined) {
+          replaced += 1;
+          return {$ref: reference};
+        }
+        // A lane may include a record outside --limit, or distinct derived facts.
+        // Keep its first complete projection; never merge by id or body text.
+        records.set(identity, `#/${role}/${pointer}/${index}`);
+        return row;
+      })];
+    }));
+  }
+  result.todo_list_record_references = {
+    replaced_view_records: replaced,
+    readback: "Resolve $ref at its JSON pointer within this response to read the identical record. "
+      + "Distinct projected facts remain separate. Existing overview excerpts do not replace "
+      + "an exact Todo read or fresh execution admission.",
+  };
+  return result;
 }
 
 /** Lossless lens over an already scoped exact CLI read; never selects work. */

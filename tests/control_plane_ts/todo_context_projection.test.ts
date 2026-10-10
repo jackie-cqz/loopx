@@ -7,6 +7,76 @@ const page = (records: JsonObject[], options: JsonObject = {}) => projectTodoCon
   records, owner_scope: true, offset: 0, limit: 48, ...options,
 });
 
+// Independent consumer oracle: follow response-local JSON pointers, never ids.
+function expandReferences(value: unknown, root: unknown): unknown {
+  if (Array.isArray(value)) return value.map(child => expandReferences(child, root));
+  if (value !== null && typeof value === "object") {
+    const row = value as JsonObject;
+    if (Object.keys(row).length === 1 && typeof row.$ref === "string") {
+      const target = row.$ref.slice(2).split("/").reduce((current, key) =>
+        (current as JsonObject)[key.replace(/~1/g, "/").replace(/~0/g, "~")], root);
+      return expandReferences(target, root);
+    }
+    return Object.fromEntries(Object.entries(row).map(([key, child]) =>
+      [key, expandReferences(child, root)]));
+  }
+  return value;
+}
+
+test("ordinary list references preserve every lane and distinct source fact", () => {
+  const todo = {todo_id: "todo_work", role: "agent", text: "Keep the acceptance tail.",
+    resume_ready: false, required_decision_scopes: [{scope_key: "publish", kind: "direction"}]};
+  const gate = {todo_id: "todo_gate", role: "user", text: "Wait for owner approval.",
+    global_gate: false, blocks_agent: "worker", status: "open"};
+  const derived = {...todo, recommended_action: "Review remaining Goal acceptance."};
+  const outsideLimit = {todo_id: "todo_wait", resume_when: "capacity_available:network", resume_ready: false};
+  const payload = {ok: true, command: "list", todos: [gate, todo], todo_count: 2,
+    explicit_limit: 1, authority_read: {provider_revision: "sqlite:42"},
+    user_todos: {items: [gate], first_open_items: [gate], total_count: 4},
+    agent_todos: {items: [todo], first_executable_items: [todo],
+      completed_without_successor_items: [derived], "custom/lane~items": [outsideLimit],
+      deferred_items: [outsideLimit], unknown_facts: {source: "preserved"}}};
+  const before = structuredClone(payload);
+  const result = projectTodoContextPage({list_payload: payload});
+  const {todo_list_record_references, ...wire} = result;
+  assert.deepEqual(expandReferences(wire, wire), payload);
+  assert.deepEqual(result.todos, payload.todos);
+  assert.deepEqual(payload, before);
+  assert.ok(todo_list_record_references);
+  assert.deepEqual((result.agent_todos as JsonObject).first_executable_items, [{$ref: "#/todos/1"}]);
+  assert.deepEqual((result.agent_todos as JsonObject).completed_without_successor_items, [derived]);
+  assert.deepEqual((result.agent_todos as JsonObject).deferred_items,
+    [{$ref: "#/agent_todos/custom~1lane~0items/0"}]);
+  assert.equal(result.execution_authorized, undefined);
+});
+
+test("record equality includes nested scopes, nulls, arrays and differently ordered keys", () => {
+  const row = {todo_id: "todo_one", text: "Original body", nested: {flag: false, empty: null},
+    scopes: ["first", "second"]};
+  const reordered = {scopes: ["first", "second"], nested: {empty: null, flag: false},
+    text: "Original body", todo_id: "todo_one"};
+  const changed = {...row, nested: {flag: true, empty: null}};
+  const payload = {ok: true, command: "list", todos: [row],
+    agent_todos: {items: [reordered], blockers: [changed], reversed: [{...row, scopes: ["second", "first"]}]}};
+  const result = projectTodoContextPage({list_payload: payload});
+  const {todo_list_record_references, ...wire} = result;
+  assert.deepEqual(expandReferences(wire, wire), payload);
+  assert.deepEqual((result.agent_todos as JsonObject).items, [{$ref: "#/todos/0"}]);
+  assert.deepEqual((result.agent_todos as JsonObject).blockers, [changed]);
+  assert.deepEqual(result.todos, [row]);
+});
+
+test("list references cannot mix with detail/page inputs or alter exact/thin paths", () => {
+  const payload = {ok: true, command: "list", todos: []};
+  const result = projectTodoContextPage({list_payload: payload});
+  assert.deepEqual(result.todos, []);
+  for (const changed of [{todo_id_filter: "todo_one"}, {thin: true}, {todos: null}, {ok: false}]) {
+    assert.throws(() => projectTodoContextPage({list_payload: {...payload, ...changed}}));
+  }
+  assert.throws(() => projectTodoContextPage({list_payload: payload, records: []}));
+  assert.throws(() => projectTodoContextPage({list_payload: payload, detail_payload: {}}));
+});
+
 test("overview retains declared relationships without changing their meaning", () => {
   const records = [
     {todo_id: "research", role: "agent", status: "open", priority: "P1", text: "Public report",

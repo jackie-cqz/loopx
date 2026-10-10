@@ -69,7 +69,7 @@ export async function currentLeaseAcquisitionProof<S extends string>(store: Auth
       {...details, goal_acceptance_guard: acceptance});
   }
   const dependency = todoExecutionDependencyRejection(
-    indexCoordinationProjection(head.head, input.goal_id).todos, input.todo_id);
+    indexCoordinationProjection(head.head, input.goal_id).todos, input.todo_id, input.now);
   if (dependency !== null) return failed(dependency.code, dependency.reason,
     {...details, resume_condition: dependency.condition});
   // A renewal advances version/expiry within this execution. Never rewrite the

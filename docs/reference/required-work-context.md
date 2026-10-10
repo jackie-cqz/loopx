@@ -53,6 +53,23 @@ Inventory reads without `--todo-id` retain list views; `--thin` belongs to those
 bounded lists and is rejected with an exact identity. A full requirement tail
 must never be replaced by a summary. Markdown also renders the original once.
 
+Ordinary JSON inventories keep the selected `todos` array intact. Repeated
+identical records in the role-summary lanes now use response-local JSON pointers,
+for example `{"$ref":"#/todos/0"}`. Read the complete record at that pointer;
+it is not a command or a new execution grant. A lane can contain a record outside
+an explicit `--limit`; its first complete projection remains in that lane, and
+later copies point there. Distinct projected facts are never merged by Todo id
+or body text. Counts, order, source revision, scoped User obligations and resume,
+claim and lease facts retain their original meaning. The
+`todo_list_record_references` field describes this readback.
+
+This is the default JSON CLI presentation, without a compatibility flag.
+The native decision/frontend read model, Markdown, `--thin` and exact detail
+retain their existing shapes. Existing inventory excerpts remain excerpts and
+do not replace a full exact read or a fresh guard. Pointer expansion reconstructs
+the prior inventory; reduced response size does not prove model adoption,
+faster whole turns or better task outcomes.
+
 Missing or filtered work returns `matched=false`, `todo=null`, `not_found=true`.
 Ambiguous records and source failures fail visibly, without stale-display
 fallback. Blocked, completed and archived records remain read-only observations.
@@ -89,6 +106,14 @@ transport flag does not restore the old exact Todo schema.
 状态和关系。精确响应移除列表及角色视图，不保留兼容开关；`--thin` 只用于概览。
 缺失/过滤返回未匹配，歧义/来源故障报错，不退回旧摘要。读到记录不等于获得执行
 权限；阻塞、已完成、归档记录仍只是观察。需求改变须重新准入。
+
+普通 JSON CLI 列表保留完整的选定 `todos` 数组；角色视图内完全相同的重复记录
+改为 `{"$ref":"#/todos/0"}` 等响应内指针，沿指针读取原记录。显式 `--limit`
+之外的视图记录仍保留首份正文，后续副本引用它；同 ID 但事实不同的投影不会合并。
+计数、顺序、来源、User 义务及恢复/claim/lease 条件保持原义，不增加执行权限。
+原生决策/前端读模型、Markdown、thin 和精确详情保持既有结构。没有兼容开关；
+原有摘要仍不能替代精确全文和 fresh guard。正文减少不等于模型采用、整轮加速或
+任务效果改善。
 
 安装后重新生成旧展开式 heartbeat 提示；此 PR 不热更新 runtime/automation，
 也不证明模型已采用或获得质量收益。回滚需恢复旧版本并重新生成提示。
