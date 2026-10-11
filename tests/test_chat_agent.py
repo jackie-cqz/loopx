@@ -72,6 +72,149 @@ class _FakeAppServerProcess:
         self.returncode = -1
 
 
+def _stop_server(tmp_path, monkeypatch, *, failure=None):
+    session = chat_agent.CodexChatAgentSession(process=SimpleNamespace(poll=lambda: None),
+        messages=queue.Queue(), thread_id="stop-thread", work_dir=tmp_path,
+        response_timeout_sec=.3)
+    state = {"status": "inProgress", "calls": [], "terminals": [
+        {"itemId": "old-command", "processId": "old-pty"},
+        {"itemId": "current-command", "processId": "current-pty"},
+        {"itemId": "late-command", "processId": "late-pty"},
+    ]}
+
+    def write(packet):
+        method, params = packet["method"], packet["params"]
+        state["calls"].append((method, params))
+        assert params["threadId"] == "stop-thread"
+        if failure == method:
+            session.messages.put({"id": packet["id"], "error": {"message": "rejected"}})
+            return
+        if method == "thread/turns/list":
+            result = {"data": [{"id": "current-turn", "status": state["status"]}]}
+        elif method == "turn/interrupt":
+            assert params["turnId"] == "current-turn"
+            state["status"] = "interrupted"
+            result = {}
+        elif method == "thread/items/list":
+            assert state["status"] == "interrupted" and params["turnId"] == "current-turn"
+            item_id = "late-command" if params.get("cursor") else "current-command"
+            result = {"data": [{"turnId": "current-turn", "item": {
+                "type": "commandExecution", "id": item_id, "status": "completed"}}],
+                "nextCursor": None if params.get("cursor") else "second-items"}
+        elif method == "thread/backgroundTerminals/list":
+            result = {"data": list(state["terminals"])}
+        elif method == "thread/backgroundTerminals/terminate":
+            state["terminals"] = [row for row in state["terminals"] if row["processId"] != params["processId"]]
+            result = {"terminated": True}
+        else:
+            pytest.fail(method)
+        session.messages.put({"id": packet["id"], "result": result})
+
+    monkeypatch.setattr(session, "_write", write)
+    return session, state
+
+
+def test_stop_cancels_completed_and_late_command_items_but_preserves_older_terminal(tmp_path, monkeypatch):
+    session, state = _stop_server(tmp_path, monkeypatch)
+    session.interrupt("current-turn")
+    assert state["terminals"] == [{"itemId": "old-command", "processId": "old-pty"}]
+    before_retry = len(state["calls"])
+    session.interrupt("current-turn")
+    assert all(method not in {"turn/interrupt", "thread/backgroundTerminals/terminate"}
+               for method, _ in state["calls"][before_retry:])
+
+
+@pytest.mark.parametrize("failure", ["turn/interrupt", "thread/items/list",
+                                    "thread/backgroundTerminals/list", "thread/backgroundTerminals/terminate"])
+def test_stop_rejected_control_rpc_does_not_claim_success(tmp_path, monkeypatch, failure):
+    session, state = _stop_server(tmp_path, monkeypatch, failure=failure)
+    with pytest.raises(chat_agent.CodexChatAgentError, match="rejected"):
+        session.interrupt("current-turn")
+    assert {row["processId"] for row in state["terminals"]} == {"old-pty", "current-pty", "late-pty"}
+
+
+@pytest.mark.parametrize("fault", ["wrong-turn", "cursor-cycle", "missing-data", "false-receipt"])
+def test_stop_requires_complete_scoped_inventory_and_terminal_readback(tmp_path, monkeypatch, fault):
+    session, state = _stop_server(tmp_path, monkeypatch)
+    original = session._write
+
+    def write(packet):
+        method = packet["method"]
+        if method == "thread/items/list" and fault in {"wrong-turn", "cursor-cycle", "missing-data"}:
+            result = {} if fault == "missing-data" else {"data": [{
+                "turnId": "old-turn" if fault == "wrong-turn" else "current-turn",
+                "item": {"type": "commandExecution", "id": "current-command"}}],
+                "nextCursor": "repeat" if fault == "cursor-cycle" else None}
+            session.messages.put({"id": packet["id"], "result": result})
+        elif method == "thread/backgroundTerminals/terminate" and fault == "false-receipt":
+            session.messages.put({"id": packet["id"], "result": {"terminated": False}})
+        else:
+            original(packet)
+
+    monkeypatch.setattr(session, "_write", write)
+    with pytest.raises(chat_agent.CodexChatAgentError):
+        session.interrupt("current-turn")
+    assert len(state["terminals"]) == 3
+
+
+def test_stop_waits_for_native_turn_terminal_before_command_inventory(tmp_path, monkeypatch):
+    session, state = _stop_server(tmp_path, monkeypatch)
+    original = session._write
+    reads = 0
+
+    def write(packet):
+        nonlocal reads
+        if packet["method"] == "thread/turns/list":
+            reads += 1
+            state["status"] = "interrupted" if reads >= 3 else "inProgress"
+        original(packet)
+        if packet["method"] == "turn/interrupt":
+            state["status"] = "inProgress"
+
+    monkeypatch.setattr(session, "_write", write)
+    session.interrupt("current-turn")
+    assert reads == 3 and len(state["terminals"]) == 1
+
+
+def test_stop_uses_scoped_wire_items_when_native_history_omits_aborted_commands(tmp_path, monkeypatch):
+    session, state = _stop_server(tmp_path, monkeypatch)
+    original = session._write
+    # The same item ID on another thread or Turn cannot authorize cancellation.
+    for thread, turn, item in [("foreign", "current-turn", "old-command"),
+                               ("stop-thread", "old-turn", "old-command"),
+                               ("stop-thread", "current-turn", "current-command")]:
+        session.messages.put({"method": "item/completed", "params": {
+            "threadId": thread, "turnId": turn,
+            "item": {"type": "commandExecution", "id": item, "status": "completed"}}})
+
+    def write(packet):
+        if packet["method"] == "turn/interrupt":
+            session.messages.put({"method": "item/commandExecution/outputDelta", "params": {
+                "threadId": "stop-thread", "turnId": "current-turn", "itemId": "late-command", "delta": "tick"}})
+        if packet["method"] == "thread/items/list":
+            session.messages.put({"id": packet["id"], "result": {"data": []}})
+        else:
+            original(packet)
+
+    monkeypatch.setattr(session, "_write", write)
+    session.interrupt("current-turn")
+    assert state["terminals"] == [{"itemId": "old-command", "processId": "old-pty"}]
+
+
+def test_control_deadline_still_expires_when_event_dispatch_is_contended(tmp_path, monkeypatch):
+    session, _ = _stop_server(tmp_path, monkeypatch)
+    monkeypatch.setattr(session, "_write", lambda _: None)
+    session._message_dispatch_lock.acquire()
+    try:
+        started = time.monotonic()
+        with pytest.raises(chat_agent.CodexChatAgentError):
+            session.interrupt("current-turn")
+        assert time.monotonic() - started < .8
+        assert not session._response_waiters
+    finally:
+        session._message_dispatch_lock.release()
+
+
 def _system_toolchain_fixture(monkeypatch, *, selected="/Library/Developer/CommandLineTools",
                               uid=0, writable=False, symlink=False, mutable_parent=False,
                               unsafe_path=None, unsafe_kind="mode"):
@@ -200,8 +343,10 @@ def test_project_filesystem_scope_is_verified_on_start_resume_and_pinned_per_tur
     toolchain, _ = _system_toolchain_fixture(monkeypatch, **tool_options)
     safe_toolchain = not tool_options
     profile = "loopx_workspace_only_" + ("write" if grant == "workspace_write" else "read")
+    previous_reader = {"loopx_public_source_read": {"enabled": True}} if resume and not public_reader else {}
     process = _FakeAppServerProcess(config_response={"config": {
-        "features": {"apps": True}, "mcp_servers": {"managed_fixture": {"command": "private-command"}}}},
+        "features": {"apps": True}, "mcp_servers": {
+            "managed_fixture": {"command": "private-command"}, **previous_reader}}},
         thread_response={"thread": {"id": "thread-loopx-chat"},
         "activePermissionProfile": {"id": profile}, "runtimeWorkspaceRoots": [str(tmp_path)]})
     real_which, real_popen = chat_agent.shutil.which, chat_agent.subprocess.Popen
@@ -251,7 +396,8 @@ def test_project_filesystem_scope_is_verified_on_start_resume_and_pinned_per_tur
                 "read_public_url": {"approval_mode": "approve"},
                 "read_public_image": {"approval_mode": "approve"}}
         assert servers == {
-            "managed_fixture": {"enabled": False}, "caller_fixture": {"enabled": False}}
+            "managed_fixture": {"enabled": False}, "caller_fixture": {"enabled": False},
+            **{name: {"enabled": False} for name in previous_reader}}
         env = launched[0]
         assert "PRIVATE_FIXTURE_TOKEN" not in env
         assert Path(env["CODEX_HOME"]).parent == Path(env["HOME"])
@@ -275,6 +421,68 @@ def test_project_filesystem_scope_is_verified_on_start_resume_and_pinned_per_tur
             {"method": "turn/completed", "params": {"turn": {"status": "completed"}}})
         session.send("Continue.")
         assert sent[0][1]["permissions"] == profile and "sandboxPolicy" not in sent[0][1]
+        prompt = sent[0][1]["input"][0]["text"]
+        assert ("mcp__loopx_public_source_read__read_public_url" in prompt) is public_reader
+        assert ("mcp__loopx_public_source_read__read_public_image" in prompt) is public_reader
+        if public_reader:
+            assert "requested version's URL" in prompt and "truncation and read coverage" in prompt
+        else:
+            assert prompt == chat_agent._turn_prompt("Continue.", context_summary=session.context_summary,
+                runtime_profile=session.runtime_profile, project_work=grant == "workspace_write")
+        assert sent[0][1]["threadId"] == session.thread_id == "thread-loopx-chat"
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize("resume", [False, True])
+@pytest.mark.parametrize("fault", ["invalid_setting", "missing_dependency", "name_conflict"])
+def test_public_reader_rejection_never_dispatches_or_replaces_a_thread(monkeypatch, tmp_path, resume, fault):
+    from loopx.capabilities.native_chat import codex_context
+    from loopx.capabilities.native_chat.project_context import ChatProjectContexts
+    _system_toolchain_fixture(monkeypatch)
+    monkeypatch.setenv("LOOPX_CHAT_PUBLIC_SOURCE_READ", "invalid" if fault == "invalid_setting" else "on")
+    if fault == "missing_dependency":
+        find_spec = codex_context.importlib.util.find_spec
+        monkeypatch.setattr(codex_context.importlib.util, "find_spec",
+            lambda module: None if module == "mcp" else find_spec(module))
+    config = {"mcp_servers": {"loopx_public_source_read": {"enabled": False}}} if fault == "name_conflict" else {}
+    process = _FakeAppServerProcess(config_response={"config": config})
+    monkeypatch.setattr(chat_agent.shutil, "which", lambda _: "codex")
+    monkeypatch.setattr(chat_agent.subprocess, "Popen", lambda *a, **k: process)
+    context = ChatProjectContexts([tmp_path], filesystem_scope="workspace_only").available()[0]
+    with pytest.raises(chat_agent.CodexChatAgentError, match={
+        "invalid_setting": "must be on or off", "missing_dependency": "Install loopx", "name_conflict": "conflicts",
+    }[fault]):
+        chat_agent.CodexChatAgentSession.start(codex_bin="codex", work_dir=tmp_path, goal_id=None,
+            objective="project", project_context=context, codex_home=tmp_path / "account-codex",
+            resume_thread_id="thread-loopx-chat" if resume else None,
+            model="synthetic-model", reasoning_effort="high")
+    methods = [json.loads(line).get("method") for line in process.stdin.getvalue().splitlines()]
+    assert "config/read" in methods
+    assert not set(methods) & {"thread/start", "thread/resume", "turn/start"}
+    assert process.returncode == 0
+
+
+@pytest.mark.parametrize("resume", [False, True])
+def test_host_default_project_does_not_advertise_operator_workspace_reader(monkeypatch, tmp_path, resume):
+    from loopx.capabilities.native_chat.project_context import ChatProjectContexts
+    monkeypatch.setenv("LOOPX_CHAT_PUBLIC_SOURCE_READ", "on")
+    process = _FakeAppServerProcess()
+    monkeypatch.setattr(chat_agent.shutil, "which", lambda _: "codex")
+    monkeypatch.setattr(chat_agent.subprocess, "Popen", lambda *a, **k: process)
+    context = ChatProjectContexts([tmp_path], filesystem_scope="host_default").available()[0]
+    session = chat_agent.CodexChatAgentSession.start(codex_bin="codex", work_dir=tmp_path, goal_id=None,
+        objective="project", project_context=context, resume_thread_id="thread-loopx-chat" if resume else None,
+        model="synthetic-model", reasoning_effort="high")
+    try:
+        turns = []
+        monkeypatch.setattr(session, "_request", lambda method, params, **kw:
+            turns.append(params) or {"turn": {"id": "owned-turn"}})
+        monkeypatch.setattr(session, "_next_event", lambda **kw:
+            {"method": "turn/completed", "params": {"turn": {"status": "completed"}}})
+        session.send("Read the public documentation.")
+        assert "loopx_public_source_read" not in turns[0]["input"][0]["text"]
+        assert session.permissions_profile is None
     finally:
         session.close()
 
@@ -758,10 +966,13 @@ def test_ordinary_turn_cannot_adopt_a_commentary_envelope(monkeypatch, tmp_path)
     assert response["proposals"] == []
 
 
+@pytest.mark.parametrize("public_reader", [False, True])
 def test_trusted_manager_profile_reaches_app_server_and_turn_prompt(
     monkeypatch,
     tmp_path,
+    public_reader,
 ):
+    monkeypatch.setenv("LOOPX_CHAT_PUBLIC_SOURCE_READ", "on" if public_reader else "off")
     process = _FakeAppServerProcess()
     monkeypatch.setattr(chat_agent.shutil, "which", lambda _: "codex")
     monkeypatch.setattr(chat_agent.subprocess, "Popen", lambda *a, **k: process)
@@ -796,6 +1007,7 @@ def test_trusted_manager_profile_reaches_app_server_and_turn_prompt(
         prompt = turns[0][1]["input"][0]["text"]
         assert "effective runtime profile is trusted_owner" in prompt
         assert "Do not edit files" not in prompt
+        assert "loopx_public_source_read" not in prompt
     finally:
         session.close()
 
